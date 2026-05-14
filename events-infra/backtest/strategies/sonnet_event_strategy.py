@@ -1,0 +1,400 @@
+"""Sonnet Event Strategy — LLM tags events, algorithm trades from impact table.
+
+Architecture:
+  1. LLM ONLY classifies: event text → (category, sub_category, affected_tickers)
+  2. Impact table stores: category × ticker → historical return distribution
+  3. ALGORITHM decides: lookup category stats → threshold check → trade/no-trade
+  4. Direction and sizing are DETERMINISTIC from historical stats, never from LLM opinion
+
+The LLM has no opinion on direction, magnitude, or whether to trade.
+It is a tagger, not a decision-maker.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+from collections import defaultdict
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Optional
+
+import anthropic
+
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from tick import BarTick, EventTick, Order  # noqa: E402
+from engine import StrategyContext  # noqa: E402
+
+log = logging.getLogger("strategy.sonnet_event")
+
+# ── Strategy parameters (deterministic, no LLM involvement) ─────────────
+HOLDING_BARS = 15
+POSITION_SIZE_PCT = 0.05        # 5% of portfolio per trade
+MIN_OBS_TO_TRADE = 3            # need N observations before trading a category
+MIN_HIT_RATE = 0.55             # directional consistency threshold
+MIN_AVG_RETURN_BPS = 2.0        # minimum |avg return| in bps to be worth trading
+MAX_CONCURRENT_POSITIONS = 3    # per strategy
+
+# ── LLM prompt — classification ONLY, no direction/opinion ──────────────
+CLASSIFY_PROMPT = """\
+You are a financial event tagger. Given a news headline, assign it a category.
+
+Headline: {headline}
+Published: {publish_time}
+Surprise value: {surprise}
+
+Output a JSON object with ONLY these fields:
+{{
+  "event_category": string,     // Broad category. Use CONSISTENT labels:
+                                // "fed_policy", "earnings_data", "trade_policy", "geopolitical",
+                                // "corporate_action", "economic_data", "regulatory", "energy_commodity",
+                                // "tech_sector", "labor_market", "fiscal_policy", "other"
+  "sub_category": string,       // Specific: "rate_decision", "cpi_release", "tariff_escalation", etc.
+  "affected_tickers": string[]  // Which of [{tickers}] are likely relevant. Can be empty.
+}}
+
+Rules:
+- You are ONLY tagging. Do NOT predict direction, sentiment, or market impact.
+- Use CONSISTENT labels so the same type of event always gets the same category.
+- Return ONLY the JSON object."""
+
+
+# ── Impact table: historical event→price reaction stats ─────────────────
+
+@dataclass
+class ImpactRecord:
+    """Single observation: one event's actual price reaction."""
+    category: str
+    sub_category: str
+    ticker: str
+    actual_return: float        # realized return over HOLDING_BARS
+    event_time: datetime
+
+
+class _CatStats:
+    """Running statistics for one (category, ticker) pair."""
+    __slots__ = ("count", "total", "sq_total", "pos_count")
+
+    def __init__(self):
+        self.count = 0
+        self.total = 0.0
+        self.sq_total = 0.0
+        self.pos_count = 0
+
+    def add(self, ret: float) -> None:
+        self.count += 1
+        self.total += ret
+        self.sq_total += ret * ret
+        if ret > 0:
+            self.pos_count += 1
+
+    @property
+    def mean(self) -> float:
+        return self.total / self.count if self.count > 0 else 0.0
+
+    @property
+    def hit_rate(self) -> float:
+        return self.pos_count / self.count if self.count > 0 else 0.5
+
+    @property
+    def std(self) -> float:
+        if self.count < 2:
+            return 0.0
+        var = (self.sq_total / self.count) - (self.mean ** 2)
+        return var ** 0.5 if var > 0 else 0.0
+
+
+class ImpactTable:
+    """Running statistics of event→price reactions per (category, ticker).
+
+    Returns are TONE-ADJUSTED (symmetric pooling):
+    - Bullish event + market up = positive (tone predicted correctly)
+    - Bearish event + market down = positive (tone predicted correctly)
+    - Bearish event + market up = negative (tone was wrong)
+
+    This pools all tones into one bucket per category while preserving
+    directional information. A positive mean means "tone reliably predicts
+    direction for this category."
+    """
+
+    def __init__(self):
+        self._stats: dict[tuple[str, str], _CatStats] = defaultdict(_CatStats)
+
+    def record(self, category: str, tone: str, ticker: str,
+               actual_return: float, event_time: datetime) -> None:
+        adjusted = self._tone_adjust(actual_return, tone)
+        self._stats[(category, ticker)].add(adjusted)
+
+    def lookup(self, category: str, ticker: str) -> Optional[_CatStats]:
+        return self._stats.get((category, ticker))
+
+    def summary(self) -> dict:
+        out = {}
+        for (cat, ticker), s in sorted(self._stats.items(), key=lambda x: -x[1].count):
+            out[f"{cat}/{ticker}"] = {
+                "n": s.count, "avg_bps": round(s.mean * 10000, 1),
+                "hit%": round(s.hit_rate * 100, 1),
+            }
+        return out
+
+    @staticmethod
+    def _tone_adjust(actual_return: float, tone: str) -> float:
+        """Sign-adjust return relative to tone.
+
+        Positive result = market moved in tone's expected direction.
+        Bearish tone: flip sign (market down = positive).
+        Bullish tone: keep sign (market up = positive).
+        Neutral/mixed: keep sign (no expectation to adjust for).
+        """
+        if tone == "bearish":
+            return -actual_return
+        return actual_return
+
+
+# ── Decision engine: pure algorithm, no LLM ─────────────────────────────
+
+def decide_trade(stats: Optional[_CatStats], tone: str) -> tuple[str | None, float]:
+    """Deterministic trade decision from tone-adjusted category statistics.
+
+    If tone-adjusted avg is positive and consistent, it means "tone reliably
+    predicts direction." Then:
+    - Bullish tone → buy (tone says up, history confirms tone works)
+    - Bearish tone → sell (tone says down, history confirms tone works)
+    - Neutral/mixed → no trade (no directional tone to act on)
+
+    If tone-adjusted avg is negative, tone is WRONG for this category —
+    trade OPPOSITE to tone.
+    """
+    if stats is None or stats.count < MIN_OBS_TO_TRADE:
+        return None, 0.0
+
+    if tone in ("neutral", "mixed"):
+        return None, 0.0
+
+    avg_bps = abs(stats.mean * 10000)
+    if avg_bps < MIN_AVG_RETURN_BPS:
+        return None, 0.0
+
+    tone_reliable = stats.mean > 0 and stats.hit_rate >= MIN_HIT_RATE
+    tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= MIN_HIT_RATE
+
+    if tone_reliable:
+        side = "buy" if tone == "bullish" else "sell"
+    elif tone_contrarian:
+        side = "sell" if tone == "bullish" else "buy"
+    else:
+        return None, 0.0
+
+    confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
+    return side, confidence
+
+
+# ── Strategy engine ─────────────────────────────────────────────────────
+
+CACHE_PATH = Path(__file__).resolve().parent.parent / "events_classified_cache.json"
+
+
+class SonnetEventStrategy:
+    """LLM tags events (from cache), algorithm trades from historical impact table."""
+
+    name = "sonnet_event"
+
+    def __init__(self, tickers: list[str], model: str = "claude-sonnet-4-6"):
+        self.tickers = tickers
+        self.model = model
+        self._client: anthropic.Anthropic | None = None
+        self.impact = ImpactTable()
+        self.classification_log: list[dict] = []
+        self._last_bar: dict[str, BarTick] = {}
+        self._cache: dict[str, dict] = self._load_cache()
+
+        # Pending: events tagged but awaiting exit to record actual return
+        self._pending: list[dict] = []
+
+    def _load_cache(self) -> dict:
+        if CACHE_PATH.exists():
+            try:
+                with open(CACHE_PATH, encoding="utf-8") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, OSError):
+                pass
+        return {}
+
+    @property
+    def client(self) -> anthropic.Anthropic:
+        if self._client is None:
+            self._client = anthropic.Anthropic(
+                base_url=os.environ.get("CLASSIFIER_LLM_BASE_URL", "http://192.168.1.10:9210"),
+                api_key=os.environ.get("CLASSIFIER_LLM_API_KEY", "event_classifier"),
+            )
+        return self._client
+
+    def on_bar(self, tick: BarTick, ctx: StrategyContext) -> list[Order]:
+        self._last_bar[tick.ticker] = tick
+
+        # Passive observation: check if any pending observations have reached t+15
+        remaining = []
+        for obs in self._pending:
+            if obs.get("recorded"):
+                continue
+            if obs["ticker"] != tick.ticker:
+                remaining.append(obs)
+                continue
+
+            obs["bars_elapsed"] = obs.get("bars_elapsed", 0) + 1
+
+            if obs["bars_elapsed"] >= HOLDING_BARS:
+                entry_price = obs.get("entry_close")
+                if entry_price and entry_price > 0:
+                    ret = (tick.close - entry_price) / entry_price
+                    self.impact.record(
+                        category=obs["category"],
+                        tone=obs.get("tone", "neutral"),
+                        ticker=obs["ticker"],
+                        actual_return=ret,
+                        event_time=obs["event_time"],
+                    )
+                obs["recorded"] = True
+            remaining.append(obs)
+
+        self._pending = remaining
+        return []
+
+    def on_event(self, tick: EventTick, ctx: StrategyContext) -> list[Order]:
+        headline = tick.headline or ""
+        if not headline.strip():
+            return []
+
+        # Step 1: Look up cache first, fall back to LLM
+        cached = self._cache.get(str(tick.event_id))
+        if cached:
+            tag = cached
+        else:
+            tag = self._classify(headline, tick.publish_time, tick.surprise)
+            if tag:
+                self._cache[str(tick.event_id)] = tag
+
+        if not tag:
+            return []
+
+        category = tag.get("event_category", "other")
+        sub_cat = tag.get("sub_category", "")
+        affected = tag.get("affected_tickers") or []
+
+        self.classification_log.append({
+            "event_id": tick.event_id,
+            "time": tick.publish_time.isoformat(),
+            "headline": headline[:100],
+            "category": category,
+            "sub_category": sub_cat,
+            "affected": affected,
+        })
+
+        # Use pre-classified tone from the event as direction differentiator
+        tone = tick.inferred_tone
+
+        # Always record pending observation (even if we don't trade)
+        # This passively builds the impact table for ALL events
+        for ticker in affected:
+            if ticker in self.tickers:
+                last_bar = self._last_bar.get(ticker)
+                self._pending.append({
+                    "category": category,
+                    "sub_category": sub_cat,
+                    "tone": tone,
+                    "ticker": ticker,
+                    "event_time": tick.publish_time,
+                    "entry_close": last_bar.close if last_bar else None,
+                    "bars_elapsed": 0,
+                })
+
+        # Step 2: Algorithm decides from impact table (no LLM involvement)
+        orders = []
+        open_positions = ctx.positions(self.name)
+        if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
+            return []
+
+        for ticker in affected:
+            if ticker not in self.tickers:
+                continue
+            if any(p.ticker == ticker for p in open_positions):
+                continue
+
+            stats = self.impact.lookup(category, ticker)
+            side, confidence = decide_trade(stats, tone)
+
+            if side is None:
+                continue
+
+            orders.append(Order(
+                strategy=self.name,
+                ticker=ticker,
+                side=side,
+                qty_pct=POSITION_SIZE_PCT,
+                reason=f"{category}/{tone}/{sub_cat}",
+                submitted_at=tick.publish_time,
+                metadata={
+                    "event_id": tick.event_id,
+                    "category": category,
+                    "sub_category": sub_cat,
+                    "tone": tone,
+                    "impact_n": stats.count,
+                    "impact_avg_bps": round(stats.mean * 10000, 2),
+                    "impact_hit_pct": round(stats.hit_rate * 100, 1),
+                    "algo_confidence": round(confidence, 4),
+                },
+            ))
+
+        return orders
+
+    def record_exit(self, ticker: str, actual_return: float, exit_time: datetime) -> None:
+        """Called by runner when position exits. Updates impact table."""
+        for pending in self._pending:
+            if pending["ticker"] == ticker and pending.get("recorded") is None:
+                self.impact.record(
+                    category=pending["category"],
+                    tone=pending.get("tone", "neutral"),
+                    ticker=ticker,
+                    actual_return=actual_return,
+                    event_time=pending["event_time"],
+                )
+                pending["recorded"] = True
+                break
+
+    def refit(self, train_start: datetime, train_end: datetime, ctx: StrategyContext) -> None:
+        log.info("refit at %s: %d categories tracked", train_end.strftime("%Y-%m-%d"),
+                 len(self.impact._stats))
+        summary = self.impact.summary()
+        for key, s in list(summary.items())[:10]:
+            log.info("  %s: n=%d avg=%.1fbps hit=%.0f%%", key, s["n"], s["avg_bps"], s["hit%"])
+
+    def _classify(self, headline: str, publish_time: datetime, surprise: float | None) -> dict | None:
+        prompt = CLASSIFY_PROMPT.format(
+            tickers=", ".join(self.tickers),
+            headline=headline,
+            publish_time=publish_time.strftime("%Y-%m-%d %H:%M UTC"),
+            surprise=surprise if surprise is not None else "N/A",
+        )
+        try:
+            resp = self.client.messages.create(
+                model=self.model, max_tokens=200,
+                messages=[{"role": "user", "content": prompt}],
+            )
+        except Exception as e:
+            log.warning("classify failed: %s", e)
+            return None
+
+        raw = resp.content[0].text if resp.content else ""
+        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
+        try:
+            result = json.loads(cleaned)
+            if isinstance(result, dict) and "event_category" in result:
+                return result
+        except json.JSONDecodeError:
+            pass
+        return None

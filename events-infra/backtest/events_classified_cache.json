@@ -1,0 +1,1565 @@
+{
+  "a20b9144-6e78-4569-becb-c960642a57f3": {
+    "event_category": "other",
+    "sub_category": "news_feed_announcement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "13f41470-d755-41b5-acc2-9b2338427de4": {
+    "event_category": "earnings_data",
+    "sub_category": "quarterly_deliveries",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "cf197a02-7cd9-4a16-9581-760e9d83b54d": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_resignation",
+    "affected_tickers": []
+  },
+  "75db4570-c075-4d53-9edf-4a438e5b304e": {
+    "event_category": "corporate_action",
+    "sub_category": "bankruptcy_talks",
+    "affected_tickers": []
+  },
+  "35f6314d-0b7f-4c75-b95a-09af3964e09a": {
+    "event_category": "other",
+    "sub_category": "political_rally",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "d82de28e-3e0d-490e-865d-2f8fbcd3a3ac": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_case",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b6ab5c17-e78e-4dfe-a72a-c5705617fab1": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_ruling",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "86b786c1-96dd-4e18-9a7e-b265840b6bbc": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_injunction",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "bfcbcc38-0264-4a7c-84ae-375420ee7947": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_ruling",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e98ca6e4-671c-4d56-8fa8-684eb9f37c0f": {
+    "event_category": "regulatory",
+    "sub_category": "legal_appeal",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "11b22633-dd21-4e9a-b6e2-e8f29987a313": {
+    "event_category": "corporate_action",
+    "sub_category": "company_statement",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "d403a697-e3c9-4a9a-b79f-e41464c544a0": {
+    "event_category": "other",
+    "sub_category": "executive_political_comment",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "a40b2f33-3219-4dc6-aedf-df335f49b9b9": {
+    "event_category": "corporate_action",
+    "sub_category": "company_statement",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "2d456c41-d794-4bc3-b735-92d5aa711112": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "platform_ban",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "aba87467-390b-4f76-867c-56ddd4a2088f": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "military_action",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "72b195bf-c41f-430f-98d8-cd0607d37372": {
+    "event_category": "corporate_action",
+    "sub_category": "credit_rating_warning",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "1b285d77-5571-4005-beb4-5f7aacaeb5a3": {
+    "event_category": "regulatory",
+    "sub_category": "platform_ban_lifted",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "cbd66d99-bc92-4405-8a1d-81bacb363b43": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_breakup_consideration",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "0dadbb6b-3fc8-4965-b813-ac7986627e38": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_remedies",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "061e5b24-874c-47a6-91e0-e167cbd76206": {
+    "event_category": "corporate_action",
+    "sub_category": "fleet_expansion",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "da43ea9f-edf9-4644-964d-fa9ef08e6b65": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "tension_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "f6e1f8a1-1f44-4342-808f-4352150597c1": {
+    "event_category": "market_structure",
+    "sub_category": "trading_halt",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "2861da60-48ab-4538-a55c-0d13cab58cc2": {
+    "event_category": "corporate_action",
+    "sub_category": "legal_settlement",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "6ffe0c12-1cd6-49dd-986e-f1e8b71a0152": {
+    "event_category": "other",
+    "sub_category": "political_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1475aaef-2e39-4019-b778-046b8cbc097d": {
+    "event_category": "regulatory",
+    "sub_category": "legal_plea",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "c45f93e0-90a2-4cf0-9116-f4db7c5f4fb4": {
+    "event_category": "regulatory",
+    "sub_category": "settlement_penalty",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "10becb1c-125a-4d8e-a57a-43220dae0c38": {
+    "event_category": "corporate_action",
+    "sub_category": "product_announcement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "00b7c7ef-221f-4cc6-8963-ccb3345fa819": {
+    "event_category": "corporate_action",
+    "sub_category": "product_demo_controversy",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a5704462-b6a4-4040-abc2-9dc75935e7cd": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "military_strike_plan",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "2def0f75-528f-4699-9341-c9c151885d89": {
+    "event_category": "other",
+    "sub_category": "media_appearance",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1c7f73cf-d1d3-442e-abfe-9b3f844dc711": {
+    "event_category": "fed_policy",
+    "sub_category": "official_comment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "17ba98ea-b881-4f7e-9589-569bcaf3870e": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "threat_monitoring",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "003d571e-1cad-488e-8034-dcdeaa7ad157": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "deterrence_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e1292dbe-8061-42d4-9122-2ce48bb4c988": {
+    "event_category": "corporate_action",
+    "sub_category": "live_stream",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "0f2825e3-0dea-4d15-a41b-617262ddb7f5": {
+    "event_category": "other",
+    "sub_category": "media_interview",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "2e6dbf64-96b9-4bb3-abc3-a83b5a541ffe": {
+    "event_category": "regulatory",
+    "sub_category": "political_pressure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "468ffa27-b509-4f72-a55d-0cb54d604533": {
+    "event_category": "other",
+    "sub_category": "political_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "25b9c302-f515-4576-8d36-1a569c9f991e": {
+    "event_category": "other",
+    "sub_category": "election_integrity_comment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "55ed4ce7-6a0d-44fb-bac2-c3b73070acd7": {
+    "event_category": "energy_commodity",
+    "sub_category": "nuclear_investment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "2bdc4a3a-7ad4-4c69-bff9-a1da50cdd3de": {
+    "event_category": "energy_commodity",
+    "sub_category": "smr_project",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "45d4a49c-2c72-4620-ba7f-d567ae0d0bf2": {
+    "event_category": "energy_commodity",
+    "sub_category": "nuclear_funding",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a86d45e2-e6cd-4e33-896c-e6db364f5ff0": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_departure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "4b69d6b4-9400-4b0e-b263-03a32a52534d": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_departure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "9490f831-ec56-42ec-a612-490d97df71d1": {
+    "event_category": "earnings_data",
+    "sub_category": "q3_earnings",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a5797d6b-e5f3-40b2-9a38-afec539c2c40": {
+    "event_category": "earnings_data",
+    "sub_category": "revenue_guidance",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "dca512c8-7112-4a7f-85e7-8c0fa7e0d9e4": {
+    "event_category": "regulatory",
+    "sub_category": "export_control_probe",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "9563116f-9cd6-4757-be4a-fec93e9cd6b3": {
+    "event_category": "market_structure",
+    "sub_category": "stock_movement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "5af7af98-bc5e-4329-a3d0-30cb88325dde": {
+    "event_category": "fiscal_policy",
+    "sub_category": "potential_treasury_secretary",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "e20b49e6-92c0-49f7-9e7b-1f7fdfc1e7c0": {
+    "event_category": "regulatory",
+    "sub_category": "sec_lawsuit",
+    "affected_tickers": []
+  },
+  "6c160989-8c44-4f7f-949e-ea4a52e7c2ca": {
+    "event_category": "regulatory",
+    "sub_category": "sec_lawsuit",
+    "affected_tickers": []
+  },
+  "57434e1f-1f31-4991-b269-6826e72d000b": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "1745fcb6-6f6d-478e-a325-cdaa682bf4f8": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "413b0270-1467-4daa-9fab-cf3c4e8a4709": {
+    "event_category": "corporate_action",
+    "sub_category": "merger_talks",
+    "affected_tickers": []
+  },
+  "a83c2488-242d-4747-9df0-c008994d4256": {
+    "event_category": "earnings_data",
+    "sub_category": "guidance_update",
+    "affected_tickers": []
+  },
+  "8d87767e-a4f1-432e-9484-e8a31f97efa8": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "c4d4bf9d-0508-4f5d-9735-47b138244263": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "871cafa2-5c7d-438e-8253-0ecae867e6b1": {
+    "event_category": "regulatory",
+    "sub_category": "merger_investigation",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "d3fe0a67-0c78-4b43-81e5-9530240014d8": {
+    "event_category": "earnings_data",
+    "sub_category": "q3_earnings",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "552daa5d-3c5e-4dd9-bf62-c3547887db4c": {
+    "event_category": "earnings_data",
+    "sub_category": "q3_earnings",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "079d91e8-a333-4280-bc94-929cec1ea47d": {
+    "event_category": "earnings_data",
+    "sub_category": "earnings_call_detail",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "69e78972-d98a-4b17-acfd-c75a109a97bf": {
+    "event_category": "labor_market",
+    "sub_category": "strike",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "aac05fd3-7125-4c5a-a12a-edc4345710f3": {
+    "event_category": "labor_market",
+    "sub_category": "strike",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "44abc067-b925-4210-9961-c9a6647f63b3": {
+    "event_category": "regulatory",
+    "sub_category": "merger_blocked",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "04b57930-d6bf-4ba8-9f0b-216a3e294dea": {
+    "event_category": "corporate_action",
+    "sub_category": "earnings_call_cancellation",
+    "affected_tickers": []
+  },
+  "bc7a88ad-3beb-4a3f-974d-6ea0b9a0d48d": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "musk_putin_contact",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "d398ee14-03de-4dbf-b5c9-ae860c876aee": {
+    "event_category": "tech_sector",
+    "sub_category": "market_cap_milestone",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "39e37740-81e9-4e24-8e2c-2f08d03bb21f": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "cyber_espionage",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "3477717d-145e-45b2-a9d3-c2f34ab1a081": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "cyber_espionage",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "430334c6-04c4-4444-aab5-d416b1c58f7e": {
+    "event_category": "regulatory",
+    "sub_category": "lawsuit",
+    "affected_tickers": []
+  },
+  "7302a14d-b343-42c0-9094-eba8eb1e4532": {
+    "event_category": "regulatory",
+    "sub_category": "settlement",
+    "affected_tickers": []
+  },
+  "2c3f3396-58f0-44c7-bc1e-7439d5c10b66": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "military_strike",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "91f2d8ec-dfac-400b-9d13-0c5737f20070": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "military_strike_scope",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "25ddaa07-c74e-448b-a7fb-2ec6f7b93abd": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "ec9f502c-c69c-4fcc-9f97-701c0a6d9859": {
+    "event_category": "corporate_action",
+    "sub_category": "product_safety",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "55629cf9-088d-4c94-aa97-fb50f53797ab": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_product_development",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1e8964df-9bc6-4f77-8307-0d4c84d3a32c": {
+    "event_category": "tech_sector",
+    "sub_category": "stock_movement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b68522f7-5f0e-428b-8ce3-8df38079f5a8": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_commentary",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "422c27ba-c846-465c-a6be-97fe743ee03f": {
+    "event_category": "corporate_action",
+    "sub_category": "takeover_interest",
+    "affected_tickers": []
+  },
+  "32941e17-a8b1-4998-975b-b92a1f3e3dba": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_robotics_commentary",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b42aa84e-0109-4b4d-bd0e-c8a6ebe017d0": {
+    "event_category": "tech_sector",
+    "sub_category": "autonomous_driving",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "4feaa9fa-5cf8-40bc-b73b-f01367502516": {
+    "event_category": "corporate_action",
+    "sub_category": "merger_stance",
+    "affected_tickers": []
+  },
+  "f3c5ffdb-acb3-4119-9263-7be8977d06e7": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_chip_development",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b13191db-f066-4c08-bd53-26afbc65bb06": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_chip_capacity",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1e49dacd-e299-4a50-8831-b8d0714644ce": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_funding",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a1bd1dcd-aa0a-4ebf-b073-f9bc971619dc": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_chip_forecast",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "72c92630-2833-4c43-831d-9a6db803c850": {
+    "event_category": "labor_market",
+    "sub_category": "layoffs",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e6cf72c7-6fe7-4bce-aaa1-d43abdae31d7": {
+    "event_category": "corporate_action",
+    "sub_category": "layoffs",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "06677b66-f705-4d80-8e6d-fde77b0c475b": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_agents_launch",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "716ff563-c85a-4de0-994d-eecac24f4b6e": {
+    "event_category": "other",
+    "sub_category": "political_appointment",
+    "affected_tickers": []
+  },
+  "bfc092da-d019-4be0-9b05-ff4b38ec033e": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "ceasefire_negotiations",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "55d8892f-67af-4b17-8893-6d1b73f6f0e6": {
+    "event_category": "corporate_action",
+    "sub_category": "acquisition",
+    "affected_tickers": []
+  },
+  "a31de514-3d82-414f-89df-4f8396c2f06a": {
+    "event_category": "fiscal_policy",
+    "sub_category": "tax_credit_elimination",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "03f184f9-07b2-4252-b400-2376747578a2": {
+    "event_category": "fiscal_policy",
+    "sub_category": "corporate_support_for_tax_credit_elimination",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "868b7454-27c5-4e1a-b011-69f655bd894a": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_investigation",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "492edb7b-4587-436a-921f-8e008d107de6": {
+    "event_category": "other",
+    "sub_category": "political_statement",
+    "affected_tickers": []
+  },
+  "438facd8-f1c0-4e91-9818-3d9b80866cdf": {
+    "event_category": "corporate_action",
+    "sub_category": "insider_sale",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "c74365ff-b4a1-4c58-82bc-d7bee1d1183e": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "diplomatic_meeting",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "98a0ebd7-90e1-4fd2-aeb4-e238440504ac": {
+    "event_category": "corporate_action",
+    "sub_category": "compliance_plan",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "9ece7e8a-25be-4a95-b9b4-e7b8e02d5eb6": {
+    "event_category": "corporate_action",
+    "sub_category": "acquisition_talks",
+    "affected_tickers": []
+  },
+  "951273f6-bafe-4860-a977-f62141236785": {
+    "event_category": "tech_sector",
+    "sub_category": "crypto_meeting",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "72c84ab9-c7bc-4d04-b4f5-654e72d58238": {
+    "event_category": "other",
+    "sub_category": "political_meeting",
+    "affected_tickers": []
+  },
+  "91c45170-9d9c-4904-ad37-8217b80c06ef": {
+    "event_category": "labor_market",
+    "sub_category": "immigration_policy_military",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "ee0b1138-6964-40e1-a6b4-98ce099f7b62": {
+    "event_category": "corporate_action",
+    "sub_category": "debt_offering",
+    "affected_tickers": []
+  },
+  "2c33be96-49fa-4163-a7cc-6f68b2b83ff3": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_departure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "f1b238e8-8d00-45a3-9ffd-9acabf9fd19c": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_summit",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "68da25bb-1f16-4527-aaae-054f9df6d34c": {
+    "event_category": "corporate_action",
+    "sub_category": "auditor_appointment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "c8bc7ed6-c17b-445c-a0af-42ebb4c150db": {
+    "event_category": "corporate_action",
+    "sub_category": "listing_status_update",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1c51163d-1563-4a8b-9022-16836adf8590": {
+    "event_category": "other",
+    "sub_category": "political_attendance",
+    "affected_tickers": []
+  },
+  "0407c822-2163-42eb-b410-6dcc763c48c9": {
+    "event_category": "corporate_action",
+    "sub_category": "filing_update",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "8bedea85-56b8-4af2-9665-ad06c1ad07a7": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_remedy",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "6c1af770-71c5-4eb7-897e-c12465594442": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_partnership_talks",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "044059b7-ed8d-41e2-91fd-8d229fc082c1": {
+    "event_category": "other",
+    "sub_category": "price_movement",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "0b8da6a5-a1e6-438b-8387-46a59e5bd6c8": {
+    "event_category": "tech_sector",
+    "sub_category": "fintech_integration",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "0eec457a-0b98-4c06-8886-42d220df4e04": {
+    "event_category": "other",
+    "sub_category": "legal_proceedings",
+    "affected_tickers": []
+  },
+  "5fbc960d-c7f1-4c54-b1dc-aca666504335": {
+    "event_category": "other",
+    "sub_category": "political_appointment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a1b696ff-8255-4a0b-9a8b-42a17f7f9d35": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_chip_fundraising",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "f6488b61-0525-489f-b2dd-56d0e0d4f122": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_chip_fundraising",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "fb074e07-cde1-46f0-920f-57e525629dfb": {
+    "event_category": "fiscal_policy",
+    "sub_category": "treasury_secretary_contender",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b1330aca-d5f0-450f-b08e-57b1953f8ce6": {
+    "event_category": "tech_sector",
+    "sub_category": "AI_partnership_talks",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b34d299d-25d9-499e-889c-4e4c6b183c04": {
+    "event_category": "corporate_action",
+    "sub_category": "non_compliance_notice",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "dab1f54c-6a00-4d6c-a6bc-c8658de3b4ea": {
+    "event_category": "corporate_action",
+    "sub_category": "company_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "296e4ca5-b723-4073-a38a-49e31e3f1540": {
+    "event_category": "corporate_action",
+    "sub_category": "stock_split",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a733529e-33f5-4bd2-89e3-485be6432dd9": {
+    "event_category": "other",
+    "sub_category": "political_appointment_withdrawal",
+    "affected_tickers": []
+  },
+  "b1fbc74a-d36d-401f-8c60-dc5f873980ae": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_investment_review",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "4b19af2a-8c07-428c-bdf7-f1c4916fe799": {
+    "event_category": "tech_sector",
+    "sub_category": "browser_competition",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "401e9c1d-c845-4e77-8493-8f845c54e889": {
+    "event_category": "other",
+    "sub_category": "political_appointment",
+    "affected_tickers": []
+  },
+  "d03b407f-51d5-480e-b493-1706062bbd9b": {
+    "event_category": "fed_policy",
+    "sub_category": "fed_chair_speculation",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "ead0f89d-eed5-44b0-89b6-73f2abba621c": {
+    "event_category": "corporate_action",
+    "sub_category": "investment_ai_partnership",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "afa537bc-42d7-4e5e-a0f7-93a96db2b759": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_departure",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "8fe96998-3560-4758-afbb-87509378704a": {
+    "event_category": "corporate_action",
+    "sub_category": "chips_act_grant",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "87465924-cd6d-42d5-967d-104ab5dabf4b": {
+    "event_category": "regulatory",
+    "sub_category": "ev_credit_exclusion",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "9b973358-bd99-45ee-8020-e6dde05eccd3": {
+    "event_category": "other",
+    "sub_category": "legal_proceeding",
+    "affected_tickers": []
+  },
+  "a901dd26-b807-4019-9cea-e041310ea7eb": {
+    "event_category": "corporate_action",
+    "sub_category": "chips_act_grant",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a678087b-623f-4e65-819b-72962cf1ac85": {
+    "event_category": "corporate_action",
+    "sub_category": "merger_interest_cooled",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "009a40d9-fd71-449f-979b-a417ef938bba": {
+    "event_category": "fiscal_policy",
+    "sub_category": "sanctuary_city_funding",
+    "affected_tickers": []
+  },
+  "7c92f9cd-0137-4510-a535-b99b2df9204f": {
+    "event_category": "regulatory",
+    "sub_category": "marijuana_rescheduling",
+    "affected_tickers": []
+  },
+  "2685fc76-9e7f-43f0-8010-4836152dde14": {
+    "event_category": "regulatory",
+    "sub_category": "fda_decision",
+    "affected_tickers": []
+  },
+  "85854363-0205-4d6a-acc9-fd3c76e96097": {
+    "event_category": "trade_policy",
+    "sub_category": "border_closure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "df660274-1528-48d9-96b2-9ff9bcfd61db": {
+    "event_category": "other",
+    "sub_category": "political_pardon",
+    "affected_tickers": []
+  },
+  "553cb5f5-d114-4c97-a720-0dc6ceb04e48": {
+    "event_category": "corporate_action",
+    "sub_category": "ceo_retirement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "722a852a-99dc-4961-8bf4-8e2f5f57e089": {
+    "event_category": "corporate_action",
+    "sub_category": "governance_review",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "34a67718-4688-4cb3-bcc3-f76f9a26c673": {
+    "event_category": "corporate_action",
+    "sub_category": "cfo_appointment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "eaab1f0e-372a-49e0-b0fe-29e4d49b4f82": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "martial_law_south_korea",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e6a17683-2306-4d24-ac93-a3b30de595e9": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "martial_law_lifted",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "3cecd116-01c9-44d2-bf4a-0af1fc2dfb36": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "martial_law_withdrawal",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "c4db6a6e-20b9-4818-8b7c-aaeaaa0ecb06": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_supercomputer",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "6728e5c2-7871-45ad-8b38-5c2a2512682f": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_chips_competition",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b42b58fa-ce62-4e89-938d-f9b7639bdcda": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "martial_law_standoff",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "ebb463d4-503f-4802-85cf-99d04038948f": {
+    "event_category": "regulatory",
+    "sub_category": "ftc_investigation",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "c3fcd7ca-6298-4018-a892-3ff8552de239": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "martial_law_lifted",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "fdbabfc0-c4d5-49a7-963e-ee1305c14f41": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_appointment",
+    "affected_tickers": []
+  },
+  "bbe47b63-ac83-48fa-a751-6ebc1c0bfdec": {
+    "event_category": "market_structure",
+    "sub_category": "market_open_after_crisis",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "57671561-316d-4369-a329-e925a4752d01": {
+    "event_category": "corporate_action",
+    "sub_category": "ceo_death",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "1cf84612-78ca-427e-af5a-0098b62c7f4c": {
+    "event_category": "regulatory",
+    "sub_category": "sec_chair_appointment",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "8e8187bc-69d0-4a6c-839c-5d79f84cb82a": {
+    "event_category": "regulatory",
+    "sub_category": "tiktok_ban_sale_law",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "bba61459-bff2-4fb1-8ee8-4c62e58aed84": {
+    "event_category": "regulatory",
+    "sub_category": "ftc_investigation_gambling",
+    "affected_tickers": []
+  },
+  "7d00f4ca-01df-41e1-90d9-eebebaf864cf": {
+    "event_category": "market_structure",
+    "sub_category": "sp500_additions",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a7c2ded7-e270-448b-906a-b3db96dffc5d": {
+    "event_category": "corporate_action",
+    "sub_category": "ceo_death_update",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "dc6854c3-9f59-4f9b-b29e-303f80195a51": {
+    "event_category": "corporate_action",
+    "sub_category": "pricing_strategy",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "082884ec-ce1f-495c-850b-04935aac031a": {
+    "event_category": "corporate_action",
+    "sub_category": "acquisition_talks",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "a1f62058-bc03-474f-8625-220aeaa62a0b": {
+    "event_category": "regulatory",
+    "sub_category": "blocked_merger",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "fb76e5a9-70b4-47b7-b414-7a567483eb62": {
+    "event_category": "fed_policy",
+    "sub_category": "rate_cut_expectations",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "bc483237-8236-4b42-b446-a755b263a7d9": {
+    "event_category": "tech_sector",
+    "sub_category": "ai_chip_development",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "697a91a4-dc17-41bf-8bb2-70ac3681a878": {
+    "event_category": "other",
+    "sub_category": "wealth_milestone",
+    "affected_tickers": []
+  },
+  "c44d93bd-23c5-44b2-a4a0-e37fb8752590": {
+    "event_category": "trade_policy",
+    "sub_category": "diplomatic_invitation",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "b81b7ae2-14e5-4801-89b9-0c94e3434dba": {
+    "event_category": "tech_sector",
+    "sub_category": "chip_supplier_switch",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a4650845-7b24-4755-8b5e-2a6d2d5b9ae6": {
+    "event_category": "corporate_action",
+    "sub_category": "convertible_notes_offering",
+    "affected_tickers": []
+  },
+  "7a2dc32a-6364-4377-8fb5-c6d8210b613a": {
+    "event_category": "corporate_action",
+    "sub_category": "capital_raise",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "7f1d85d5-4a94-4426-941d-574e236bdd3e": {
+    "event_category": "corporate_action",
+    "sub_category": "board_change",
+    "affected_tickers": []
+  },
+  "a77dd699-b784-43e1-8bed-35a212c782f0": {
+    "event_category": "market_structure",
+    "sub_category": "nasdaq100_additions",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "44145d69-89e2-412a-8d0b-b56ca5b3c55e": {
+    "event_category": "market_structure",
+    "sub_category": "nasdaq100_removals",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "057afc8f-f432-44dc-a595-80b79ac56766": {
+    "event_category": "regulatory",
+    "sub_category": "tiktok_ban_position",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "8dafa3c3-808e-4be1-b7b0-49fa3bd25841": {
+    "event_category": "regulatory",
+    "sub_category": "antitrust_head_departure",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "c739617b-8ce5-4b9e-ad9e-a1de65dad4b5": {
+    "event_category": "regulatory",
+    "sub_category": "export_control_probe",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "91c7573f-3c62-4fe4-80b3-b60324fe34d8": {
+    "event_category": "corporate_action",
+    "sub_category": "spin_off",
+    "affected_tickers": []
+  },
+  "d2675774-5652-4a2c-966e-41f5904713e5": {
+    "event_category": "corporate_action",
+    "sub_category": "strategic_investment",
+    "affected_tickers": []
+  },
+  "12b797b9-34fc-4b75-9af3-f21e7cf8201e": {
+    "event_category": "earnings_data",
+    "sub_category": "cloud_revenue",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "fb683e1f-a694-406b-a0c1-9b17b8115d82": {
+    "event_category": "earnings_data",
+    "sub_category": "eps_beat",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "6f3558d6-bdb5-4545-94b7-8df792052a6b": {
+    "event_category": "earnings_data",
+    "sub_category": "revenue_beat",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "ba0de43c-20fb-4d44-aaa4-03a458006723": {
+    "event_category": "earnings_data",
+    "sub_category": "ad_revenue_beat",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "e4ab6efc-41ed-4697-a3a2-f67bd7515b45": {
+    "event_category": "corporate_action",
+    "sub_category": "stake_dissolution",
+    "affected_tickers": []
+  },
+  "262af2b0-1497-445b-bf83-4d3bed1539fa": {
+    "event_category": "corporate_action",
+    "sub_category": "workforce_reduction",
+    "affected_tickers": []
+  },
+  "24b0320b-ca39-48ed-835f-6802e2683951": {
+    "event_category": "corporate_action",
+    "sub_category": "workforce_reduction",
+    "affected_tickers": []
+  },
+  "30fea809-ee6b-49da-971c-c60347ec16ff": {
+    "event_category": "other",
+    "sub_category": "political_event",
+    "affected_tickers": []
+  },
+  "3422a895-5f51-4aa9-ad96-4d4db180e692": {
+    "event_category": "corporate_action",
+    "sub_category": "insider_sale",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "7a9ed7e8-7447-4b00-a702-a0ed9e73fd46": {
+    "event_category": "other",
+    "sub_category": "election_results",
+    "affected_tickers": []
+  },
+  "f7d67fc1-f1ba-4dca-a961-105de387641f": {
+    "event_category": "other",
+    "sub_category": "election_results",
+    "affected_tickers": []
+  },
+  "a63395c6-4d65-4201-821e-69c183f30e29": {
+    "event_category": "other",
+    "sub_category": "senate_control_projection",
+    "affected_tickers": []
+  },
+  "b6fd4803-b076-45e4-8674-76fc84e9bce0": {
+    "event_category": "other",
+    "sub_category": "senate_majority",
+    "affected_tickers": []
+  },
+  "566c8216-9194-4628-a0f3-1f6329b13bd1": {
+    "event_category": "other",
+    "sub_category": "vote_counting",
+    "affected_tickers": []
+  },
+  "81d883dd-e8f3-46e8-bf49-ea1062669665": {
+    "event_category": "other",
+    "sub_category": "election_result",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e95c9ad4-60b9-43c3-961c-17cb126d8fb8": {
+    "event_category": "other",
+    "sub_category": "election_result",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "650659c3-4669-4f58-9d01-32e599c453d2": {
+    "event_category": "corporate_action",
+    "sub_category": "partnership_announcement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "18f6446c-1303-46ee-a6f2-d4af1f99da5d": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_announcement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "e2bfb98f-7df6-4aad-9dc6-fbfb59aeabab": {
+    "event_category": "other",
+    "sub_category": "party_internal",
+    "affected_tickers": []
+  },
+  "82c76075-b81f-48f2-a4b1-c90ed009b990": {
+    "event_category": "other",
+    "sub_category": "election_concession",
+    "affected_tickers": []
+  },
+  "0dbd242d-3d78-4686-abeb-2ad1e840e360": {
+    "event_category": "other",
+    "sub_category": "election_communication",
+    "affected_tickers": []
+  },
+  "2cdfdece-97ab-4b72-8152-c0e46ed44a1c": {
+    "event_category": "fed_policy",
+    "sub_category": "leadership_tenure",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "6cd33031-449c-4d98-9564-1dc622c08312": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "geopolitical_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "66079f60-0bc9-42bf-b9eb-d5cd65f5d20f": {
+    "event_category": "fed_policy",
+    "sub_category": "resignation_statement",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "8bcb2feb-b9b8-4f19-8a38-01faba7b67dd": {
+    "event_category": "corporate_action",
+    "sub_category": "share_sale_announcement",
+    "affected_tickers": []
+  },
+  "d645a9f8-58a6-453c-9440-96c2304d3e25": {
+    "event_category": "tech_sector",
+    "sub_category": "market_cap_milestone",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "1c0e56d0-0b7d-4644-a5d9-5e62e2a7d46c": {
+    "event_category": "other",
+    "sub_category": "legal_strategy",
+    "affected_tickers": []
+  },
+  "161c8dfd-9de8-479f-a171-8a3bf54a59f8": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "diplomatic_call",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "10cfb808-b35d-439f-9836-277a8ab530e3": {
+    "event_category": "trade_policy",
+    "sub_category": "export_controls",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "387bfffe-6589-4658-89dd-c83c5fba59d7": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "ukraine_conflict",
+    "affected_tickers": [
+      "SPY"
+    ]
+  },
+  "f6d02572-aa8e-40e8-9d73-357f128f19f4": {
+    "event_category": "corporate_action",
+    "sub_category": "hiring_expansion",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "5dc13a03-d91f-4ee6-b31d-289be8bbe268": {
+    "event_category": "other",
+    "sub_category": "diplomatic_talk",
+    "affected_tickers": []
+  },
+  "0f5a7839-649a-4da0-820e-7bd2c4824689": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "gaza_war",
+    "affected_tickers": []
+  },
+  "841adab5-a313-4afd-b4f9-90500eee5399": {
+    "event_category": "corporate_action",
+    "sub_category": "executive_resignation",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "2a52b4a8-e803-4be8-9794-2117ad9a46fc": {
+    "event_category": "other",
+    "sub_category": "personal_appointment",
+    "affected_tickers": []
+  },
+  "78138f2d-f2b3-40bc-8e5d-3f7c2c598c40": {
+    "event_category": "regulatory",
+    "sub_category": "platform_ban",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "13b855b3-d0a2-42f4-9c7c-397fced24796": {
+    "event_category": "corporate_action",
+    "sub_category": "new_product",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "a845368e-2ff5-43b3-8bbc-46673fed543f": {
+    "event_category": "corporate_action",
+    "sub_category": "insider_sale",
+    "affected_tickers": [
+      "SPY",
+      "QQQ"
+    ]
+  },
+  "9ae99d02-31c8-42cd-8410-dbfe59ab32ae": {
+    "event_category": "corporate_action",
+    "sub_category": "bankruptcy_filing",
+    "affected_tickers": []
+  },
+  "a294b50e-992d-40db-b7b3-0f54cb810695": {
+    "event_category": "market_structure",
+    "sub_category": "after_hours_move",
+    "affected_tickers": []
+  },
+  "be5abc83-5f59-4168-acaf-d42d59f1f29a": {
+    "event_category": "regulatory",
+    "sub_category": "delayed_filing",
+    "affected_tickers": []
+  },
+  "6868c9ff-a390-4290-8afa-8f0b468cc10f": {
+    "event_category": "regulatory",
+    "sub_category": "ai_policy",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  },
+  "2d7a0fb6-b8b9-423e-884c-8dc92a0a4f43": {
+    "event_category": "geopolitical_conflict",
+    "sub_category": "ai_competition",
+    "affected_tickers": [
+      "QQQ",
+      "SPY"
+    ]
+  },
+  "44145d66-89e2-412a-8d0b-b56ca5b3c55e": {
+    "event_category": "market_structure",
+    "sub_category": "index_rebalancing",
+    "affected_tickers": [
+      "QQQ"
+    ]
+  }
+}
