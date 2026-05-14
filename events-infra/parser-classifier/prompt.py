@@ -19,8 +19,9 @@ You must output ALL of these fields:
 {
   "headline": string,             // Clean one-line summary. Strip leading * and whitespace.
   "is_regular": boolean,          // TRUE = scheduled periodic release (earnings, economic indicator, quarterly data with actual vs estimate). FALSE = breaking/irregular news.
-  "event_type": string,           // MUST use one of: earnings_report, earnings_beat, earnings_miss, guidance_raise, guidance_cut, revenue, deliveries, cpi_release, ppi_release, gdp_release, nfp_release, pmi_release, fomc_decision, rate_hike, rate_cut, rate_hold, tariff_new, tariff_change, sanctions, merger_announced, buyback, restructuring, exec_change, ipo, stock_split, analyst_action, geopolitical, conflict_escalation, diplomacy, policy_statement, market_move, capex, partnership, investigation, legal, product_launch, other
-  "tone": "bullish" | "bearish" | "neutral" | "mixed",
+  "event_type": string,           // MUST use one of: earnings, guidance, revenue, deliveries, cpi_release, ppi_release, gdp_release, nfp_release, pmi_release, fomc_decision, tariff, sanctions, merger, buyback, restructuring, exec_change, ipo, stock_split, analyst_action, geopolitical, conflict_escalation, diplomacy, policy_statement, market_move, capex, partnership, investigation, legal, product_launch, other
+  "event_outcome": string | null, // Sub-classification within event_type. Examples: for earnings → "beat"|"miss"|"inline"; for fomc_decision → "hold"|"hike"|"cut"; for tariff → "new"|"change"|"removed"; for guidance → "raise"|"cut"|"maintain". Null if not applicable.
+  "tone": "bullish" | "bearish" | "neutral" | "mixed",  // Text sentiment only — NOT a market direction signal
   "magnitude": "major" | "moderate" | "minor",
   "impact_markets": string[],     // From: US_EQUITY, US_FI, EU_EQUITY, EU_FI, COMMODITY, FX, CRYPTO, EM
   "tickers": string[],            // All ticker symbols mentioned or implied. Uppercase, no $ prefix.
