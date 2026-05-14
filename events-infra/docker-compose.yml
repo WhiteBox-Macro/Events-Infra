@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: aotc-signals-pg
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: aotc
+      POSTGRES_PASSWORD: CHANGEME
+      POSTGRES_DB: aotc
+    volumes:
+      # Persistent PG data — lives next to the repo, survives container rebuilds
+      - ./pg-data:/var/lib/postgresql/data
+
+      # Repo migrations mounted read-only so new .sql files are visible immediately.
+      # initdb.d only runs on first DB init; after that use apply_migrations.py or psql.
+      - ../db/migrations:/migrations/repo:ro
+      - ./db/migrations:/migrations/events:ro
+
+      # Bootstrap script runs repo migrations then events migrations in order
+      - ./init-db.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aotc -d aotc"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

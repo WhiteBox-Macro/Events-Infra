@@ -1,13 +1,26 @@
 """Constants and shared config for AOTC-Signals.
 
 DB_BASE here defaults to /opt/db-signals so this repo's state/log/lock files
-don't collide with AOTC-DB's /opt/db tree. Override via env if you want to
-share volumes.
+don't collide with AOTC-DB's /opt/db tree. Override via env or .env file.
 """
 import os
 from pathlib import Path
 
-DB_BASE = Path(os.environ.get("DB_BASE", "/opt/db-signals"))
+
+def _read_env_value(key: str) -> str | None:
+    """Read a single key from cwd/.env before full env loading."""
+    try:
+        with open(".env", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and line.startswith(key + "="):
+                    return line.split("=", 1)[1].strip().strip('"').strip("'")
+    except OSError:
+        pass
+    return None
+
+
+DB_BASE = Path(os.environ.get("DB_BASE") or _read_env_value("DB_BASE") or "/opt/db-signals")
 LOG_DIR = DB_BASE / "logs"
 LOCK_DIR = DB_BASE / "locks"
 STATE_DIR = DB_BASE / "state"
@@ -33,7 +46,7 @@ def load_dotenv_files(*extra_paths: str) -> dict:
     for p in paths:
         if os.path.exists(p):
             try:
-                with open(p) as f:
+                with open(p, encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if line and not line.startswith("#") and "=" in line:

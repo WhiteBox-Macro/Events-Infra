@@ -21,3 +21,6 @@ logs/
 locks/
 state/
 reports/
+
+# Local PostgreSQL data
+events-infra/pg-data/
