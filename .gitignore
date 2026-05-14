@@ -1,0 +1,23 @@
+.env
+.env.local
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+.DS_Store
+
+# Local Claude Code config — keep your local permissions/settings out of git.
+.claude/
+
+# Raw payloads + logs/locks/state live under $DB_BASE outside the repo,
+# but if anyone sets DB_BASE to the repo root these would land here.
+raw/
+logs/
+locks/
+state/
+reports/

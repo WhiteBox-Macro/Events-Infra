@@ -1,0 +1,35 @@
+[project]
+name = "aotc-signals"
+version = "0.1.0"
+description = "News / macro / social ingestion and signal generation. Shares Postgres with aotc-db."
+# LangGraph requires 3.11+ (typing-extensions features in the prebuilt nodes).
+requires-python = ">=3.11"
+dependencies = [
+    "psycopg2-binary>=2.9",
+    "httpx>=0.27",
+    "feedparser>=6.0",
+]
+
+[project.optional-dependencies]
+# `pip install -e ".[trader]"` to add the slow-agent + paper-trade extras.
+# Kept optional so the ingester-only deploy stays lean.
+trader = [
+    "yfinance>=0.2.40",           # live + historical prices for paper sim
+    "anthropic>=0.40",            # Claude SDK; ticker LLM fallback + slow agent
+    "langgraph>=0.2",             # multi-agent orchestration
+    "langchain-core>=0.3",
+    "langchain-anthropic>=0.3",
+    "langgraph-checkpoint-postgres>=2.0", # share Postgres for checkpoint state
+    "pydantic>=2.7",              # structured outputs (research manager, trader proposal)
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
