@@ -26,12 +26,16 @@ _PRIORITY_EVENT = 1
 
 
 def _load_parquet_bars(ticker: str, parquet_dir: Path) -> tuple[pd.DataFrame, np.ndarray]:
+    # Support both layouts: {ticker}/*.parquet and {ticker}/1m/*.parquet
     ticker_dir = parquet_dir / ticker
     if not ticker_dir.exists():
         raise FileNotFoundError(f"No parquet dir: {ticker_dir}")
 
+    sub_1m = ticker_dir / "1m"
+    search_dir = sub_1m if sub_1m.exists() else ticker_dir
+
     frames = []
-    for f in sorted(ticker_dir.glob("*.parquet")):
+    for f in sorted(search_dir.glob("*.parquet")):
         frames.append(pd.read_parquet(f))
 
     df = pd.concat(frames, ignore_index=True).sort_values("timestamp").reset_index(drop=True)

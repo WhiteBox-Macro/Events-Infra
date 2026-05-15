@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Event Backtest Replay</title>
+<script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#0d1117; color:#c9d1d9; font-family:'Consolas','Monaco',monospace; font-size:12px; overflow:hidden; height:100vh; }
+
+#controls { display:flex; align-items:center; gap:10px; padding:6px 12px; background:#161b22; border-bottom:1px solid #30363d; height:36px; }
+#controls button { background:#21262d; color:#c9d1d9; border:1px solid #30363d; padding:3px 10px; cursor:pointer; border-radius:4px; font-family:inherit; font-size:12px; }
+#controls button:hover { background:#30363d; }
+#controls button.active { background:#1f6feb; color:#fff; border-color:#1f6feb; }
+#progress-wrap { flex:1; height:6px; background:#21262d; border-radius:3px; cursor:pointer; }
+#progress-fill { height:100%; background:#1f6feb; border-radius:3px; width:0%; pointer-events:none; }
+#sim-info { color:#8b949e; white-space:nowrap; }
+
+#layout { display:grid; grid-template-columns:240px 1fr 280px; grid-template-rows:1fr 180px; height:calc(100vh - 36px); }
+
+/* Left: Events */
+#events-panel { grid-column:1; grid-row:1; border-right:1px solid #30363d; display:flex; flex-direction:column; overflow:hidden; }
+#events-panel h3 { padding:6px 10px 3px; color:#1f6feb; font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+#upcoming-events { flex:1; overflow-y:auto; padding:0 8px; }
+#past-events { flex:0 0 45%; overflow-y:auto; padding:0 8px; border-top:1px solid #30363d; }
+.evt { padding:3px 0; border-bottom:1px solid #0d1117; line-height:1.3; font-size:11px; }
+.evt-time { color:#484f58; font-size:10px; }
+.evt-headline { color:#c9d1d9; }
+.evt-badge { display:inline-block; padding:0 3px; border-radius:2px; font-size:9px; margin-right:3px; }
+.badge-bullish { background:#0d2818; color:#3fb950; }
+.badge-bearish { background:#2d0a0a; color:#f85149; }
+.badge-neutral { background:#1c1c2e; color:#8b949e; }
+.badge-mixed { background:#2a1d00; color:#d29922; }
+.badge-regular { background:#0a1929; color:#58a6ff; }
+
+/* Center: Chart */
+#chart-area { grid-column:2; grid-row:1; padding:2px; position:relative; }
+#chart-title { position:absolute; top:8px; left:12px; z-index:10; font-size:16px; color:#58a6ff; font-weight:bold; }
+
+/* Right: Ticker select + Decision pipeline */
+#right-panel { grid-column:3; grid-row:1; border-left:1px solid #30363d; display:flex; flex-direction:column; overflow:hidden; }
+
+#ticker-select { padding:8px; border-bottom:1px solid #30363d; }
+#ticker-select h3 { color:#1f6feb; font-size:10px; letter-spacing:1px; margin-bottom:4px; text-transform:uppercase; }
+#ticker-search { width:100%; background:#0d1117; color:#c9d1d9; border:1px solid #30363d; padding:4px 8px; border-radius:4px; font-family:inherit; font-size:12px; margin-bottom:6px; }
+#ticker-list { max-height:120px; overflow-y:auto; }
+.tkr-item { display:inline-block; padding:2px 8px; margin:2px; border-radius:3px; cursor:pointer; background:#161b22; border:1px solid #30363d; font-size:11px; }
+.tkr-item:hover { background:#21262d; }
+.tkr-item.active { background:#1f6feb; color:#fff; border-color:#1f6feb; }
+.tkr-item .tkr-price { color:#58a6ff; margin-left:4px; font-size:10px; }
+
+#decision-pipeline { flex:1; overflow-y:auto; padding:8px; }
+#decision-pipeline h3 { color:#1f6feb; font-size:10px; letter-spacing:1px; margin-bottom:6px; text-transform:uppercase; }
+.decision-card { background:#161b22; border:1px solid #30363d; border-radius:6px; padding:8px; margin-bottom:8px; font-size:11px; }
+.decision-card .step { padding:3px 0; border-bottom:1px solid #21262d; }
+.decision-card .step:last-child { border-bottom:none; }
+.step-label { color:#484f58; font-size:9px; text-transform:uppercase; letter-spacing:0.5px; }
+.step-value { color:#c9d1d9; }
+.step-highlight { color:#58a6ff; font-weight:bold; }
+.decision-buy { border-left:3px solid #3fb950; }
+.decision-sell { border-left:3px solid #f85149; }
+.decision-skip { border-left:3px solid #484f58; }
+
+/* Bottom: Portfolio + Positions + Trades */
+#bottom-panel { grid-column:1/-1; grid-row:2; border-top:1px solid #30363d; display:grid; grid-template-columns:200px 1fr 1fr; background:#0d1117; }
+#portfolio-box { padding:10px; border-right:1px solid #30363d; }
+#portfolio-box .label { color:#8b949e; font-size:9px; text-transform:uppercase; }
+#portfolio-value { font-size:22px; font-weight:bold; margin:4px 0; }
+#positions-box { padding:8px; border-right:1px solid #30363d; overflow-y:auto; }
+#positions-box h3 { color:#1f6feb; font-size:10px; letter-spacing:1px; margin-bottom:4px; }
+#pos-table { width:100%; border-collapse:collapse; }
+#pos-table td,#pos-table th { padding:2px 5px; text-align:right; font-size:11px; }
+#pos-table th { color:#484f58; border-bottom:1px solid #30363d; }
+.pnl-up { color:#3fb950; } .pnl-dn { color:#f85149; }
+#trades-box { padding:8px; overflow-y:auto; }
+#trades-box h3 { color:#1f6feb; font-size:10px; letter-spacing:1px; margin-bottom:4px; }
+.trade-item { font-size:10px; padding:2px 0; border-bottom:1px solid #0d1117; }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <button onclick="doPlay()">▶ Play</button>
+  <button onclick="doPause()">⏸</button>
+  <span style="color:#30363d">│</span>
+  <button class="speed-btn active" data-s="1min" onclick="setSpd(this)">1m/s</button>
+  <button class="speed-btn" data-s="5min" onclick="setSpd(this)">5m/s</button>
+  <button class="speed-btn" data-s="15min" onclick="setSpd(this)">15m/s</button>
+  <button class="speed-btn" data-s="1hr" onclick="setSpd(this)">1h/s</button>
+  <button class="speed-btn" data-s="4hr" onclick="setSpd(this)">4h/s</button>
+  <button class="speed-btn" data-s="1day" onclick="setSpd(this)">1d/s</button>
+  <button class="speed-btn" data-s="max" onclick="setSpd(this)">MAX</button>
+  <div id="progress-wrap" onclick="seekBar(event)"><div id="progress-fill"></div></div>
+  <span id="sim-info">Connecting...</span>
+</div>
+
+<div id="layout">
+  <div id="events-panel">
+    <h3>▼ Upcoming Events</h3>
+    <div id="upcoming-events"></div>
+    <h3>▲ Event History</h3>
+    <div id="past-events"></div>
+  </div>
+
+  <div id="chart-area">
+    <div id="chart-title">QQQ</div>
+    <div id="main-chart"></div>
+  </div>
+
+  <div id="right-panel">
+    <div id="ticker-select">
+      <h3>Tickers</h3>
+      <input type="text" id="ticker-search" placeholder="Search ticker..." oninput="filterTickers(this.value)">
+      <div id="ticker-list"></div>
+    </div>
+    <div id="decision-pipeline">
+      <h3>Decision Pipeline</h3>
+      <div id="decisions"></div>
+      <div style="color:#484f58;font-size:10px;padding:8px">Strategy decisions will appear here as events fire and the agent evaluates each one.</div>
+    </div>
+  </div>
+
+  <div id="bottom-panel">
+    <div id="portfolio-box">
+      <div class="label">Portfolio Value</div>
+      <div id="portfolio-value">$1,000,000</div>
+      <div class="label" style="margin-top:8px">Open Positions</div>
+      <div id="pos-count" style="font-size:16px;font-weight:bold">0</div>
+    </div>
+    <div id="positions-box">
+      <h3>Positions</h3>
+      <table id="pos-table"><thead><tr><th>Ticker</th><th>Side</th><th>Qty</th><th>Entry</th><th>P&L</th></tr></thead>
+      <tbody id="pos-body"></tbody></table>
+    </div>
+    <div id="trades-box">
+      <h3>Trade Log</h3>
+      <div id="trade-list"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const S = {
+  tickers:[], focused:'QQQ', ws:null,
+  mainChart:null, mainSeries:null,
+  barBuf:{}, markers:[], prices:{},
+};
+
+let _mainRedrawPending = false;
+
+// ── Main Chart ──
+function initMainChart() {
+  const el = document.getElementById('main-chart');
+  const p = el.parentElement;
+  S.mainChart = LightweightCharts.createChart(el, {
+    width:p.clientWidth-4, height:p.clientHeight-4,
+    layout:{background:{color:'#0d1117'}, textColor:'#8b949e'},
+    grid:{vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'}},
+    timeScale:{timeVisible:true, secondsVisible:false, rightOffset:5},
+    crosshair:{mode:0},
+  });
+  S.mainSeries = S.mainChart.addCandlestickSeries({
+    upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
+    wickUpColor:'#3fb950', wickDownColor:'#f85149',
+  });
+  new ResizeObserver(()=>{S.mainChart.applyOptions({width:p.clientWidth-4,height:p.clientHeight-4});}).observe(p);
+}
+
+// ── Ticker List ──
+function buildTickerList() {
+  const el = document.getElementById('ticker-list');
+  el.innerHTML = '';
+  S.tickers.forEach(t => {
+    const d = document.createElement('span');
+    d.className = 'tkr-item' + (t===S.focused?' active':'');
+    d.id = 'tkr-'+t;
+    d.onclick = () => focusTicker(t);
+    d.innerHTML = t + '<span class="tkr-price" id="price-'+t+'">—</span>';
+    el.appendChild(d);
+  });
+}
+
+function filterTickers(q) {
+  const query = q.toUpperCase();
+  document.querySelectorAll('.tkr-item').forEach(el => {
+    el.style.display = el.textContent.toUpperCase().includes(query) ? '' : 'none';
+  });
+}
+
+function focusTicker(ticker) {
+  S.focused = ticker;
+  document.getElementById('chart-title').textContent = ticker;
+  document.querySelectorAll('.tkr-item').forEach(el => el.classList.toggle('active', el.id==='tkr-'+ticker));
+  S.markers = [];
+  const data = S.barBuf[ticker] || [];
+  try {
+    S.mainSeries.setData(data);
+    S.mainSeries.setMarkers([]);
+    if (data.length > 0) S.mainChart.timeScale().fitContent();
+  } catch(e) {}
+}
+
+// ── Message Handlers ──
+function onBar(m) {
+  const bar = {time:m.t, open:m.o, high:m.h, low:m.l, close:m.c};
+  if (!S.barBuf[m.ticker]) S.barBuf[m.ticker] = [];
+  const buf = S.barBuf[m.ticker];
+  if (buf.length===0 || buf[buf.length-1].time < m.t) buf.push(bar);
+  else if (buf[buf.length-1].time===m.t) buf[buf.length-1] = bar;
+
+  // Main chart: setData from buffer via requestAnimationFrame
+  if (m.ticker===S.focused && !_mainRedrawPending) {
+    _mainRedrawPending = true;
+    requestAnimationFrame(() => {
+      _mainRedrawPending = false;
+      if (!S.mainSeries) return;
+      const data = S.barBuf[S.focused] || [];
+      if (data.length===0) return;
+      try {
+        S.mainSeries.setData(data);
+        if (S.markers.length>0) S.mainSeries.setMarkers(S.markers);
+        S.mainChart.timeScale().scrollToRealTime();
+      } catch(e) {}
+    });
+  }
+
+  S.prices[m.ticker] = m.c;
+  const pe = document.getElementById('price-'+m.ticker);
+  if (pe) pe.textContent = m.c.toFixed(2);
+}
+
+function onEvent(m) {
+  const ts = new Date(m.t*1000).toISOString().slice(5,16).replace('T',' ');
+  const tone = m.tone||'neutral';
+  const html = '<div class="evt"><span class="evt-time">'+ts+'</span> '
+    +'<span class="evt-badge badge-'+tone+'">'+tone+'</span>'
+    +(m.is_regular?'<span class="evt-badge badge-regular">SCHED</span>':'')
+    +'<span class="evt-badge" style="background:#1c1c2e;color:#8b949e">'+m.event_type+'</span><br>'
+    +'<span class="evt-headline">'+(m.headline||'').slice(0,80)+'</span>'
+    +(m.surprise!=null?' <b style="color:#58a6ff">['+m.surprise+']</b>':'')
+    +'</div>';
+  const past = document.getElementById('past-events');
+  past.insertAdjacentHTML('afterbegin', html);
+  if (past.children.length>200) past.removeChild(past.lastChild);
+
+  const up = document.getElementById('upcoming-events');
+  if (up.firstChild) up.removeChild(up.firstChild);
+
+  if ((m.tickers||[]).includes(S.focused)) {
+    S.markers.push({time:m.t, position:tone==='bearish'?'aboveBar':'belowBar',
+      color:tone==='bearish'?'#f85149':tone==='bullish'?'#3fb950':'#8b949e',
+      shape:tone==='bearish'?'arrowDown':'arrowUp', text:m.event_type.slice(0,10)});
+    try { S.mainSeries.setMarkers(S.markers); } catch(e) {}
+  }
+
+  // Add to decision pipeline (event received, awaiting strategy evaluation)
+  addDecisionCard(m, null);
+}
+
+function onFill(m) {
+  const ts = new Date(m.t*1000).toISOString().slice(5,16).replace('T',' ');
+  const c = m.side==='buy'?'pnl-up':'pnl-dn';
+  document.getElementById('trade-list').insertAdjacentHTML('afterbegin',
+    '<div class="trade-item"><span class="'+c+'">'+m.side.toUpperCase()+'</span> '+m.ticker+' @'+m.price+' <span style="color:#8b949e">'+ts+'</span> '+m.reason+'</div>');
+
+  if (m.ticker===S.focused) {
+    S.markers.push({time:m.t, position:m.side==='buy'?'belowBar':'aboveBar',
+      color:m.side==='buy'?'#00ff88':'#ff4444', shape:m.side==='buy'?'arrowUp':'arrowDown',
+      text:m.side==='buy'?'BUY':'SELL'});
+    try { S.mainSeries.setMarkers(S.markers); } catch(e) {}
+  }
+
+  // Update decision pipeline with trade result
+  addDecisionCard(null, m);
+}
+
+function onExit(m) {
+  const ts = new Date(m.t*1000).toISOString().slice(5,16).replace('T',' ');
+  const c = m.pnl_pct>=0?'pnl-up':'pnl-dn';
+  document.getElementById('trade-list').insertAdjacentHTML('afterbegin',
+    '<div class="trade-item">EXIT '+m.ticker+' @'+m.price+' <span class="'+c+'">'+(m.pnl_pct>=0?'+':'')+m.pnl_pct.toFixed(2)+'%</span> '+ts+'</div>');
+}
+
+function onPortfolio(m) {
+  document.getElementById('portfolio-value').textContent = '$'+m.value.toLocaleString(undefined,{maximumFractionDigits:0});
+  document.getElementById('pos-count').textContent = (m.positions||[]).length;
+  const tb = document.getElementById('pos-body'); tb.innerHTML='';
+  (m.positions||[]).forEach(p=>{
+    const c=p.pnl_pct>=0?'pnl-up':'pnl-dn';
+    tb.innerHTML+='<tr><td>'+p.ticker+'</td><td>'+p.side+'</td><td>'+p.qty.toFixed(1)+'</td><td>'+p.entry.toFixed(1)+'</td><td class="'+c+'">'+(p.pnl_pct>=0?'+':'')+p.pnl_pct.toFixed(2)+'%</td></tr>';
+  });
+}
+
+function onPlayback(m) {
+  document.getElementById('progress-fill').style.width=(m.progress_pct||0)+'%';
+  const st = m.state==='finished'?' ✓ DONE':m.state==='paused'?' ⏸':' ▶';
+  if(m.sim_time) document.getElementById('sim-info').textContent=m.sim_time.slice(0,19).replace('T',' ')+st+' '+Math.round(m.progress_pct||0)+'%';
+}
+
+function onEventsPreview(m) {
+  const el=document.getElementById('upcoming-events'); el.innerHTML='';
+  (m.events||[]).forEach(e=>{
+    const t=new Date(e.t*1000).toISOString().slice(5,16).replace('T',' ');
+    const tone=e.tone||'neutral';
+    el.innerHTML+='<div class="evt"><span class="evt-time">'+t+'</span> '
+      +'<span class="evt-badge badge-'+tone+'">'+tone+'</span>'
+      +(e.is_regular?'<span class="evt-badge badge-regular">SCHED</span>':'')
+      +'<br><span class="evt-headline">'+(e.headline||'').slice(0,60)+'</span></div>';
+  });
+}
+
+function onSeekDone(m) {
+  S.tickers.forEach(t=>{S.barBuf[t]=[];});
+  S.markers=[];
+  try{S.mainSeries.setData([]);S.mainSeries.setMarkers([]);}catch(e){}
+  document.getElementById('past-events').innerHTML='';
+  document.getElementById('trade-list').innerHTML='';
+  document.getElementById('decisions').innerHTML='';
+  onPlayback({state:'paused', progress_pct:m.progress_pct, sim_time:m.sim_time});
+}
+
+// ── Decision Pipeline Cards ──
+function addDecisionCard(event, fill) {
+  const el = document.getElementById('decisions');
+  const card = document.createElement('div');
+
+  if (event && !fill) {
+    // Event received — show classification
+    const tone = event.tone||'neutral';
+    card.className = 'decision-card decision-skip';
+    card.innerHTML =
+      '<div class="step"><span class="step-label">Event</span><br>'
+      +'<span class="step-value">'+(event.headline||'').slice(0,60)+'</span></div>'
+      +'<div class="step"><span class="step-label">Classification</span><br>'
+      +'<span class="step-value">'+event.event_type+' <span class="evt-badge badge-'+tone+'">'+tone+'</span>'
+      +(event.is_regular?' <span class="evt-badge badge-regular">scheduled</span>':'')
+      +(event.surprise!=null?' surprise='+event.surprise:'')+'</span></div>'
+      +'<div class="step"><span class="step-label">Affected Tickers</span><br>'
+      +'<span class="step-value">'+(event.tickers||[]).join(', ')||'none'+'</span></div>'
+      +'<div class="step"><span class="step-label">Decision</span><br>'
+      +'<span class="step-value" style="color:#484f58">Evaluating...</span></div>';
+  }
+
+  if (fill) {
+    // Trade executed — show full pipeline
+    const side = fill.side;
+    card.className = 'decision-card decision-'+side;
+    const parts = (fill.reason||'').split('/');
+    card.innerHTML =
+      '<div class="step"><span class="step-label">Strategy</span><br>'
+      +'<span class="step-value">'+fill.strategy+'</span></div>'
+      +'<div class="step"><span class="step-label">Category → Impact Lookup</span><br>'
+      +'<span class="step-value">'+parts[0]+' / '+parts.slice(1).join('/')+'</span></div>'
+      +'<div class="step"><span class="step-label">Action</span><br>'
+      +'<span class="step-highlight" style="color:'+(side==='buy'?'#3fb950':'#f85149')+'">'
+      +side.toUpperCase()+' '+fill.ticker+' @ $'+fill.price+' (qty: '+fill.qty+')</span></div>';
+  }
+
+  el.insertBefore(card, el.firstChild);
+  if (el.children.length > 30) el.removeChild(el.lastChild);
+}
+
+// ── Message Router ──
+function handle(m) {
+  switch(m.type) {
+    case 'bar': onBar(m); break;
+    case 'event': onEvent(m); break;
+    case 'fill': onFill(m); break;
+    case 'exit': onExit(m); break;
+    case 'portfolio': onPortfolio(m); break;
+    case 'playback': onPlayback(m); break;
+    case 'events_preview': onEventsPreview(m); break;
+    case 'seek_done': onSeekDone(m); break;
+    case 'batch': m.msgs.forEach(handle); break;
+    case 'init':
+      if (S.tickers.length>0) {
+        S.barBuf={}; S.markers=[];
+        document.getElementById('past-events').innerHTML='';
+        document.getElementById('trade-list').innerHTML='';
+        document.getElementById('decisions').innerHTML='';
+      }
+      S.tickers=m.tickers;
+      if(!S.tickers.includes(S.focused)) S.focused=S.tickers[0];
+      m.tickers.forEach(t=>{S.barBuf[t]=[];});
+      buildTickerList();
+      focusTicker(S.focused);
+      document.getElementById('sim-info').textContent='Ready — click ▶ Play';
+      document.getElementById('portfolio-value').textContent='$'+m.portfolio_notional.toLocaleString();
+      break;
+  }
+}
+
+// ── Controls ──
+function connect() {
+  const ws=new WebSocket('ws://'+location.hostname+':__WS_PORT__');
+  S.ws=ws;
+  ws.onmessage=e=>handle(JSON.parse(e.data));
+  ws.onclose=()=>{document.getElementById('sim-info').textContent='Reconnecting...';setTimeout(connect,2000);};
+}
+function doPlay(){if(S.ws)S.ws.send(JSON.stringify({cmd:'play'}));}
+function doPause(){if(S.ws)S.ws.send(JSON.stringify({cmd:'pause'}));}
+function setSpd(btn){
+  if(S.ws)S.ws.send(JSON.stringify({cmd:'speed',value:btn.dataset.s}));
+  document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+}
+function seekBar(ev){
+  const r=document.getElementById('progress-wrap').getBoundingClientRect();
+  const pct=((ev.clientX-r.left)/r.width)*100;
+  if(S.ws)S.ws.send(JSON.stringify({cmd:'seek',pct:Math.max(0,Math.min(100,pct))}));
+}
+
+initMainChart();
+connect();
+</script>
+</body>
+</html>
