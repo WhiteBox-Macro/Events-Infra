@@ -1,4 +1,6 @@
+.env
 .env.local
+events-infra/pg-data/
 *.pyc
 __pycache__/
 .pytest_cache/
