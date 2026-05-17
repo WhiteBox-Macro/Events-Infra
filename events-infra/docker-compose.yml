@@ -7,7 +7,7 @@ services:
       - "5432:5432"
     environment:
       POSTGRES_USER: aotc
-      POSTGRES_PASSWORD: CHANGEME
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-CHANGEME}
       POSTGRES_DB: aotc
     volumes:
       # Persistent PG data — lives next to the repo, survives container rebuilds
