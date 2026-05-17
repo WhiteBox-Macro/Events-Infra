@@ -137,6 +137,40 @@ def load_existing_cache() -> dict:
     return {}
 
 
+def _write_tag_to_pg(event_id: str, tag: dict) -> bool:
+    """UPDATE events.classified with the structural tag fields. Idempotent —
+    safe to call repeatedly for the same event_id. Returns True on success.
+
+    Uses raw cursor (not pg.execute) because pg.execute() auto-wraps Python
+    lists with Json(), which breaks the TEXT[] column.
+    """
+    try:
+        with pg.transaction() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE events.classified
+                    SET event_category        = %s,
+                        sub_category          = %s,
+                        sector_impact         = %s,
+                        ticker_impact_weights = %s::jsonb,
+                        tags_classified_at    = now()
+                    WHERE event_id = %s
+                    """,
+                    (
+                        tag.get("event_category"),
+                        tag.get("sub_category"),
+                        list(tag.get("sector_impact") or []),
+                        json.dumps(tag.get("ticker_impact_weights") or {}),
+                        event_id,
+                    ),
+                )
+        return True
+    except Exception as e:
+        log.warning("pg write failed for event_id=%s: %s", event_id, e)
+        return False
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Batch pre-classify events")
     parser.add_argument("--start", default=None)
@@ -146,6 +180,10 @@ def main() -> int:
     parser.add_argument("--model", default="claude-sonnet-4-6")
     parser.add_argument("--reclassify", action="store_true",
                         help="Force reclassify all events, ignoring existing cache")
+    parser.add_argument("--write-pg", action="store_true",
+                        help="After each batch, also UPDATE events.classified with the "
+                             "structural tag columns (event_category, sub_category, "
+                             "sector_impact, ticker_impact_weights). Requires migration 003.")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -185,6 +223,7 @@ def main() -> int:
         batches.append(uncached[i:i + batch_size])
 
     total_classified = 0
+    pg_writes = 0
     for i, batch in enumerate(batches):
         results = classify_batch(client, batch, tickers_str, args.model, i + 1, len(batches))
 
@@ -195,19 +234,24 @@ def main() -> int:
                 affected = r.get("affected_tickers", [])
                 if not weights and affected:
                     weights = {t: 0.5 for t in affected}
-                cache[eid] = {
+                tag = {
                     "event_category": r.get("event_category", "other"),
                     "sub_category": r.get("sub_category", ""),
                     "affected_tickers": list(weights.keys()) if weights else affected,
                     "sector_impact": r.get("sector_impact", []),
                     "ticker_impact_weights": weights,
                 }
+                cache[eid] = tag
                 total_classified += 1
+
+                if args.write_pg:
+                    if _write_tag_to_pg(eid, tag):
+                        pg_writes += 1
 
         # Save after each batch (resume-safe)
         with open(CACHE_PATH, "w", encoding="utf-8") as f:
             json.dump(cache, f, indent=2, default=str)
-        log.info("cache saved: %d total entries", len(cache))
+        log.info("cache saved: %d total entries (pg writes this run: %d)", len(cache), pg_writes)
 
         if i < len(batches) - 1:
             time.sleep(2)

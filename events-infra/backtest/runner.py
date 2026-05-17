@@ -256,7 +256,11 @@ def main() -> int:
 
     if args.run:
         from strategies.sonnet_event_strategy import SonnetEventStrategy
-        strategy = SonnetEventStrategy(tickers=args.tickers, model=args.model)
+        from gate_params import default_registry
+        gate_registry = default_registry()
+        strategy = SonnetEventStrategy(tickers=args.tickers, model=args.model,
+                                        gate_registry=gate_registry)
+        log.info("gate_params loaded: %d active rows", len(gate_registry))
         results = run_backtest(config, [strategy])
         print(f"\nResults: {json.dumps(results, indent=2)}")
 

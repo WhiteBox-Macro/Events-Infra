@@ -50,15 +50,57 @@ class RebalOrder:
 def compute_tilt(
     category: str, ticker: str, tone: str,
     stats, llm_weight: float, tilt_scale: float = TILT_SCALE,
+    params=None, surprise: float | None = None,
 ) -> float:
-    """Tilt = direction × llm_impact_weight × 1% (normalized to holding pct)."""
+    """Tilt = direction x llm_impact_weight x tilt_unit.
+
+    When `params` (a GateParams instance) is provided, honors:
+      - params.tilt_unit  (overrides module TILT_UNIT)
+      - params.side_rule  (tone_reliable | contrarian | surprise_direction)
+      - params.min_obs    (raises bar for the stats-based path)
+      - params.min_hit_rate (used by the stats-based path)
+    When `params` is None, behaves identically to the pre-refactor logic
+    (preserves backward compatibility).
+    """
+    # Resolve effective knobs from params (or fall back to today's constants)
+    if params is not None:
+        tilt_unit = params.tilt_unit
+        side_rule = params.side_rule
+        min_obs = params.min_obs
+        min_hit_rate = params.min_hit_rate
+    else:
+        tilt_unit = TILT_UNIT
+        side_rule = "tone_reliable"
+        min_obs = 3
+        min_hit_rate = 0.55
+
+    # surprise_direction: side from surprise sign, no stats needed
+    if side_rule == "surprise_direction":
+        if surprise is None or surprise == 0:
+            return 0.0
+        direction = 1.0 if surprise > 0 else -1.0
+        return direction * llm_weight * tilt_unit
+
+    # sector_spillover not yet implemented — loud-fail (no trade)
+    if side_rule == "sector_spillover":
+        source = params.source if params is not None else "default"
+        log.warning("compute_tilt: side_rule='sector_spillover' not yet implemented "
+                    "(cat=%s ticker=%s params.source=%s); returning 0",
+                    category, ticker, source)
+        return 0.0
+
     if tone in ("neutral", "mixed"):
         return 0.0
 
-    if stats is not None and stats.count >= 3:
-        tone_reliable = stats.mean > 0 and stats.hit_rate >= 0.55
-        tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= 0.55
-        if tone_reliable:
+    if stats is not None and stats.count >= min_obs:
+        tone_reliable = stats.mean > 0 and stats.hit_rate >= min_hit_rate
+        tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= min_hit_rate
+
+        if side_rule == "contrarian":
+            if not tone_contrarian:
+                return 0.0
+            direction = -1.0 if tone == "bullish" else 1.0
+        elif tone_reliable:
             direction = 1.0 if tone == "bullish" else -1.0
         elif tone_contrarian:
             direction = -1.0 if tone == "bullish" else 1.0
@@ -67,7 +109,7 @@ def compute_tilt(
     else:
         direction = 1.0 if tone == "bullish" else -1.0
 
-    return direction * llm_weight * TILT_UNIT
+    return direction * llm_weight * tilt_unit
 
 
 class PortfolioAllocator:

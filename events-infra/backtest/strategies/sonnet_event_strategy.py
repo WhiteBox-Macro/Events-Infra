@@ -28,16 +28,24 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from tick import BarTick, EventTick, Order  # noqa: E402
 from engine import StrategyContext  # noqa: E402
+from gate_params import GateParams, GLOBAL_DEFAULTS, GateParamsRegistry, BROAD_TICKER  # noqa: E402
 
 log = logging.getLogger("strategy.sonnet_event")
 
 # ── Strategy parameters (deterministic, no LLM involvement) ─────────────
+# NOTE: MIN_OBS_TO_TRADE / MIN_HIT_RATE / MIN_AVG_RETURN_BPS are kept here
+# as the GLOBAL_DEFAULTS baked into gate_params.GLOBAL_DEFAULTS. Per-(cat,
+# ticker) overrides flow through signals.gate_params + GateParamsRegistry.
 HOLDING_BARS = 15
 POSITION_SIZE_PCT = 0.05        # 5% of portfolio per trade
-MIN_OBS_TO_TRADE = 3
-MIN_HIT_RATE = 0.55
-MIN_AVG_RETURN_BPS = 2.0
 MAX_CONCURRENT_POSITIONS = 3    # per strategy
+
+# Legacy module-level constants — referenced by older callers; new code should
+# use the GateParams dataclass instead. Kept identical to GLOBAL_DEFAULTS so
+# behavior is unchanged.
+MIN_OBS_TO_TRADE = GLOBAL_DEFAULTS.min_obs
+MIN_HIT_RATE = GLOBAL_DEFAULTS.min_hit_rate
+MIN_AVG_RETURN_BPS = GLOBAL_DEFAULTS.min_avg_bps
 
 # ── LLM prompt — classification ONLY, no direction/opinion ──────────────
 CLASSIFY_PROMPT = """\
@@ -132,6 +140,36 @@ class ImpactTable:
     def lookup(self, category: str, ticker: str) -> Optional[_CatStats]:
         return self._stats.get((category, ticker))
 
+    def lookup_with_fallback(self, category: str, ticker: str,
+                              primary_sector: str | None = None
+                              ) -> tuple[Optional[_CatStats], str]:
+        """Opt-in fallback chain for cold-start categories (B3).
+
+        Tries in order:
+          1. (category, ticker)                                -> "specific"
+          2. (category, primary_sector)  if sector given       -> "sector"
+          3. (category, BROAD_TICKER)                          -> "broad"
+          4. nothing                                           -> "surprise_default"
+
+        Returns (stats, fallback_level). The caller decides what to do with
+        a "surprise_default" hit (typically: switch side_rule to
+        'surprise_direction' regardless of params).
+
+        NOT called by on_event / compute_tilts in this session — flagged
+        opt-in per the implementation plan. Callers must wire deliberately.
+        """
+        s = self._stats.get((category, ticker))
+        if s is not None and s.count > 0:
+            return s, "specific"
+        if primary_sector:
+            s = self._stats.get((category, primary_sector))
+            if s is not None and s.count > 0:
+                return s, "sector"
+        s = self._stats.get((category, BROAD_TICKER))
+        if s is not None and s.count > 0:
+            return s, "broad"
+        return None, "surprise_default"
+
     def summary(self) -> dict:
         out = {}
         for (cat, ticker), s in sorted(self._stats.items(), key=lambda x: -x[1].count):
@@ -157,32 +195,75 @@ class ImpactTable:
 
 # ── Decision engine: pure algorithm, no LLM ─────────────────────────────
 
-def decide_trade(stats: Optional[_CatStats], tone: str) -> tuple[str | None, float, str]:
-    """Deterministic trade decision from tone-adjusted category statistics.
+def decide_trade(stats: Optional[_CatStats], tone: str,
+                  params: GateParams = GLOBAL_DEFAULTS,
+                  surprise: float | None = None) -> tuple[str | None, float, str]:
+    """Deterministic trade decision.
 
-    Returns (side, confidence, reason) where reason explains the decision.
+    Dispatches by `params.side_rule`:
+      - tone_reliable: impact-table stats + tone (the legacy default path).
+                        Also picks up tone_contrarian trades when stats say so.
+      - contrarian: strict — only trades when stats meet the contrarian
+                     criterion (mean<0, 1-hit_rate>=min_hit_rate).
+      - surprise_direction: trade the sign of `surprise` directly. **IGNORES
+                             stats, min_obs, min_hit_rate, min_avg_bps, and
+                             tone entirely.** Confidence is always 1.0. Use
+                             only for scheduled releases where surprise has
+                             a well-defined sign (economic_data category).
+      - sector_spillover: reserved for B2/B4 work; **loud-fails (returns None
+                           with a warning) until properly implemented**.
+
+    `params` defaults to GLOBAL_DEFAULTS so zero-arg call sites keep today's
+    behavior unchanged.
+
+    Returns (side, confidence, reason).
     """
+    rule = params.side_rule
+
+    # ── surprise_direction: side from surprise sign, no stats / min_obs gating ──
+    if rule == "surprise_direction":
+        if surprise is None or surprise == 0:
+            return None, 0.0, "surprise_direction: no surprise data"
+        side = "buy" if surprise > 0 else "sell"
+        return side, 1.0, f"surprise_direction: surprise={surprise:+g}"
+
+    # ── sector_spillover not yet wired (B4 future) — loud-fail ──
+    if rule == "sector_spillover":
+        log.warning("decide_trade: side_rule='sector_spillover' not implemented; "
+                    "skipping trade (params.source=%s)", params.source)
+        return None, 0.0, "side_rule sector_spillover not yet implemented (B4)"
+
+    # ── tone_reliable / contrarian use impact stats ──
     if stats is None:
         return None, 0.0, "no impact data"
 
-    if stats.count < MIN_OBS_TO_TRADE:
-        return None, 0.0, f"insufficient obs ({stats.count}/{MIN_OBS_TO_TRADE})"
+    if stats.count < params.min_obs:
+        return None, 0.0, f"insufficient obs ({stats.count}/{params.min_obs})"
 
     if tone in ("neutral", "mixed"):
         return None, 0.0, "neutral/mixed tone"
 
     avg_bps = abs(stats.mean * 10000)
-    if avg_bps < MIN_AVG_RETURN_BPS:
-        return None, 0.0, f"avg {avg_bps:.1f}bps below {MIN_AVG_RETURN_BPS}bps threshold"
+    if avg_bps < params.min_avg_bps:
+        return None, 0.0, f"avg {avg_bps:.1f}bps below {params.min_avg_bps}bps threshold"
 
-    tone_reliable = stats.mean > 0 and stats.hit_rate >= MIN_HIT_RATE
-    tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= MIN_HIT_RATE
+    tone_reliable = stats.mean > 0 and stats.hit_rate >= params.min_hit_rate
+    tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= params.min_hit_rate
 
+    if rule == "contrarian":
+        if not tone_contrarian:
+            return None, 0.0, f"contrarian rule but tone not contrarian (hit={stats.hit_rate:.0%})"
+        side = "sell" if tone == "bullish" else "buy"
+        confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
+        return side, confidence, f"contrarian: {stats.count} obs, {avg_bps:.1f}bps avg, {1-stats.hit_rate:.0%} contra-hit"
+
+    # tone_reliable (default path)
     if tone_reliable:
         side = "buy" if tone == "bullish" else "sell"
         confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
         return side, confidence, f"tone reliable: {stats.count} obs, {avg_bps:.1f}bps avg, {stats.hit_rate:.0%} hit"
     elif tone_contrarian:
+        # legacy behavior: tone_reliable rule still picks contrarian if stats say so
         side = "sell" if tone == "bullish" else "buy"
         confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
         return side, confidence, f"contrarian: {stats.count} obs, {avg_bps:.1f}bps avg, {1-stats.hit_rate:.0%} contra-hit"
@@ -201,7 +282,8 @@ class SonnetEventStrategy:
     name = "sonnet_event"
 
     def __init__(self, tickers: list[str], model: str = "claude-sonnet-4-6",
-                 cache_only: bool = False):
+                 cache_only: bool = False,
+                 gate_registry: GateParamsRegistry | None = None):
         self.tickers = tickers
         self.model = model
         self.cache_only = cache_only
@@ -212,8 +294,21 @@ class SonnetEventStrategy:
         self._cache: dict[str, dict] = self._load_cache()
         self.last_decisions: list[dict] = []
         self._blacklisted: set[tuple[str, str]] = set()
+        # Optional. If None, all lookups return GLOBAL_DEFAULTS — behavior
+        # identical to pre-refactor.
+        self.gate_registry = gate_registry
 
         self._pending: list[dict] = []
+
+    def _params_for(self, category: str, ticker: str) -> GateParams:
+        if self.gate_registry is None:
+            return GLOBAL_DEFAULTS
+        return self.gate_registry.lookup(category, ticker)
+
+    def _is_retired(self, category: str, ticker: str) -> bool:
+        if self.gate_registry is None:
+            return False
+        return self.gate_registry.is_retired(category, ticker)
 
     def reset(self):
         """Reset all mutable state for clean replay (seek to 0%)."""
@@ -348,7 +443,10 @@ class SonnetEventStrategy:
                 "sector_impact": sector_impact,
             }
 
-            if (category, ticker) in self._blacklisted:
+            if (category, ticker) in self._blacklisted or self._is_retired(category, ticker):
+                retired_reason = ("retired in signals.gate_params"
+                                   if self._is_retired(category, ticker)
+                                   else "blacklisted at last refit")
                 self.last_decisions.append({
                     "event_id": tick.event_id,
                     "headline": headline[:100],
@@ -357,7 +455,7 @@ class SonnetEventStrategy:
                     "impact_stats": None,
                     "decision": None,
                     "confidence": 0.0,
-                    "reason": "blacklisted at last refit",
+                    "reason": retired_reason,
                 })
                 continue
 
@@ -371,7 +469,9 @@ class SonnetEventStrategy:
                     "std_bps": round(stats.std * 10000, 2),
                 }
 
-            side, confidence, reason = decide_trade(stats, tone)
+            params = self._params_for(category, ticker)
+            surprise_val = float(tick.surprise) if tick.surprise is not None else None
+            side, confidence, reason = decide_trade(stats, tone, params, surprise_val)
 
             if at_capacity and side is not None:
                 side = None
@@ -476,13 +576,16 @@ class SonnetEventStrategy:
                 "from_cache": from_cache, "sector_impact": sector_impact,
             }
 
-            if (category, ticker) in self._blacklisted:
+            if (category, ticker) in self._blacklisted or self._is_retired(category, ticker):
+                retired_reason = ("retired in signals.gate_params"
+                                   if self._is_retired(category, ticker)
+                                   else "blacklisted at last refit")
                 self.last_decisions.append({
                     "event_id": tick.event_id, "headline": headline[:100],
                     "ticker": ticker, "weight": round(ticker_weight, 2),
                     "classification": classification, "impact_stats": None,
                     "decision": None, "tilt": 0.0,
-                    "confidence": 0.0, "reason": "blacklisted at last refit",
+                    "confidence": 0.0, "reason": retired_reason,
                 })
                 continue
 
@@ -496,7 +599,10 @@ class SonnetEventStrategy:
                     "std_bps": round(stats.std * 10000, 2),
                 }
 
-            tilt = _compute_tilt(category, ticker, tone, stats, ticker_weight)
+            params = self._params_for(category, ticker)
+            surprise_val = float(tick.surprise) if tick.surprise is not None else None
+            tilt = _compute_tilt(category, ticker, tone, stats, ticker_weight,
+                                  params=params, surprise=surprise_val)
             tilts[ticker] = tilt
 
             direction_label = "overweight" if tilt > 0 else "underweight" if tilt < 0 else None
@@ -508,9 +614,13 @@ class SonnetEventStrategy:
                 "decision": direction_label, "tilt": round(tilt, 6),
                 "confidence": round(abs(tilt) * 1000, 2),
                 "reason": f"tilt={tilt:+.4f}" if tilt != 0 else (
+                    f"side_rule={params.side_rule} not yet implemented"
+                        if params.side_rule == "sector_spillover" else
                     "no impact data" if stats is None else
-                    f"insufficient obs ({stats.count}/3)" if stats.count < 3 else
-                    "neutral/mixed tone" if tone in ("neutral", "mixed") else "no edge"),
+                    f"insufficient obs ({stats.count}/{params.min_obs})"
+                        if stats.count < params.min_obs else
+                    "neutral/mixed tone" if tone in ("neutral", "mixed") else
+                    "no edge"),
             })
 
         return tilts
@@ -539,6 +649,11 @@ class SonnetEventStrategy:
                 self._blacklisted.add((cat, ticker))
                 log.info("  BLACKLIST %s/%s: n=%d hit=%.0f%% avg=%.1fbps",
                          cat, ticker, stats.count, stats.hit_rate * 100, stats.mean * 10000)
+
+        # Refresh agent-proposed / manually-promoted gate params so they take
+        # effect at the next event. Safe no-op if registry is None or PG is down.
+        if self.gate_registry is not None:
+            self.gate_registry.reload()
 
         summary = self.impact.summary()
         for key, s in list(summary.items())[:10]:

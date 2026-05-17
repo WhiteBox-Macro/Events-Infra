@@ -8,8 +8,14 @@ Continuous weight-based portfolio rebalancing. Manages N tickers with target wei
 - `PortfolioAllocator` — main class: positions, tilts, targets, cash, NAV
 
 ## Key Function
-- `compute_tilt(category, ticker, tone, stats, llm_weight)` — standalone, returns weight delta
-  - Formula: direction × magnitude_bps × 0.001 × llm_weight × hit_edge
+- `compute_tilt(category, ticker, tone, stats, llm_weight, tilt_scale=TILT_SCALE, params=None, surprise=None)` — standalone, returns weight delta
+  - Formula: `direction * llm_weight * tilt_unit` where `tilt_unit` is from `params.tilt_unit` (or module `TILT_UNIT=0.01` if params is None)
+  - Dispatches by `params.side_rule` (when params given):
+    - `tone_reliable` — legacy default; honors `params.min_obs` / `params.min_hit_rate`
+    - `contrarian` — strict: only when stats meet contrarian criterion
+    - `surprise_direction` — direction from `sign(surprise)`; ignores stats / tone
+    - `sector_spillover` — loud-fails (logs WARNING, returns 0) until B4 wires it
+  - `params=None` preserves pre-refactor behavior (effective: tone_reliable, min_obs=3, min_hit_rate=0.55)
 
 ## PortfolioAllocator Methods
 - `initialize_positions(prices, ts)` — buy equal-weight portfolio

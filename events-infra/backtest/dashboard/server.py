@@ -27,6 +27,7 @@ import websockets
 from dbkit.constants import load_dotenv_files
 from replay_driver import ReplayDriver
 from strategies.sonnet_event_strategy import SonnetEventStrategy
+from gate_params import default_registry
 
 log = logging.getLogger("dashboard.server")
 
@@ -161,8 +162,11 @@ def main():
     if args.parquet_dir:
         config.parquet_dir = Path(args.parquet_dir)
 
-    strategy = SonnetEventStrategy(tickers=args.tickers, cache_only=True)
-    log.info("loaded %d cached classifications, mode=%s", len(strategy._cache), args.mode)
+    gate_registry = default_registry()
+    strategy = SonnetEventStrategy(tickers=args.tickers, cache_only=True,
+                                   gate_registry=gate_registry)
+    log.info("loaded %d cached classifications, mode=%s, gate_params=%d",
+             len(strategy._cache), args.mode, len(gate_registry))
     _driver = ReplayDriver(config, strategies=[strategy],
                            rebalance_mode=(args.mode == "rebalance"))
 
