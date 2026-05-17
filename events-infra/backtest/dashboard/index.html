@@ -82,6 +82,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Consolas','Monaco',monosp
 <div id="controls">
   <button onclick="doPlay()">▶ Play</button>
   <button onclick="doPause()">⏸</button>
+  <button onclick="doReset()" title="Reset to start">⏮</button>
   <span style="color:#30363d">│</span>
   <button class="speed-btn active" data-s="1min" onclick="setSpd(this)">1m/s</button>
   <button class="speed-btn" data-s="5min" onclick="setSpd(this)">5m/s</button>
@@ -144,6 +145,7 @@ const S = {
   tickers:[], focused:'QQQ', ws:null,
   mainChart:null, mainSeries:null,
   barBuf:{}, markers:[], prices:{},
+  mode:'discrete',
 };
 
 let _mainRedrawPending = false;
@@ -208,20 +210,13 @@ function onBar(m) {
   if (buf.length===0 || buf[buf.length-1].time < m.t) buf.push(bar);
   else if (buf[buf.length-1].time===m.t) buf[buf.length-1] = bar;
 
-  // Main chart: setData from buffer via requestAnimationFrame
-  if (m.ticker===S.focused && !_mainRedrawPending) {
-    _mainRedrawPending = true;
-    requestAnimationFrame(() => {
-      _mainRedrawPending = false;
-      if (!S.mainSeries) return;
-      const data = S.barBuf[S.focused] || [];
-      if (data.length===0) return;
-      try {
-        S.mainSeries.setData(data);
-        if (S.markers.length>0) S.mainSeries.setMarkers(S.markers);
-        S.mainChart.timeScale().scrollToRealTime();
-      } catch(e) {}
-    });
+  if (m.ticker===S.focused) {
+    try {
+      S.mainSeries.update(bar);
+    } catch(e) {
+      console.warn('update failed, setData fallback:', e.message);
+      try { S.mainSeries.setData(buf); } catch(e2) { console.error('setData failed:', e2.message); }
+    }
   }
 
   S.prices[m.ticker] = m.c;
@@ -253,8 +248,6 @@ function onEvent(m) {
     try { S.mainSeries.setMarkers(S.markers); } catch(e) {}
   }
 
-  // Add to decision pipeline (event received, awaiting strategy evaluation)
-  addDecisionCard(m, null);
 }
 
 function onFill(m) {
@@ -270,8 +263,6 @@ function onFill(m) {
     try { S.mainSeries.setMarkers(S.markers); } catch(e) {}
   }
 
-  // Update decision pipeline with trade result
-  addDecisionCard(null, m);
 }
 
 function onExit(m) {
@@ -316,48 +307,125 @@ function onSeekDone(m) {
   document.getElementById('past-events').innerHTML='';
   document.getElementById('trade-list').innerHTML='';
   document.getElementById('decisions').innerHTML='';
+  document.getElementById('pos-body').innerHTML='';
+  document.getElementById('pos-count').textContent='0';
   onPlayback({state:'paused', progress_pct:m.progress_pct, sim_time:m.sim_time});
 }
 
 // ── Decision Pipeline Cards ──
-function addDecisionCard(event, fill) {
+function onDecision(m) {
   const el = document.getElementById('decisions');
   const card = document.createElement('div');
+  const side = m.best_side;
+  card.className = 'decision-card decision-' + (side || 'skip');
 
-  if (event && !fill) {
-    // Event received — show classification
-    const tone = event.tone||'neutral';
-    card.className = 'decision-card decision-skip';
-    card.innerHTML =
-      '<div class="step"><span class="step-label">Event</span><br>'
-      +'<span class="step-value">'+(event.headline||'').slice(0,60)+'</span></div>'
-      +'<div class="step"><span class="step-label">Classification</span><br>'
-      +'<span class="step-value">'+event.event_type+' <span class="evt-badge badge-'+tone+'">'+tone+'</span>'
-      +(event.is_regular?' <span class="evt-badge badge-regular">scheduled</span>':'')
-      +(event.surprise!=null?' surprise='+event.surprise:'')+'</span></div>'
-      +'<div class="step"><span class="step-label">Affected Tickers</span><br>'
-      +'<span class="step-value">'+(event.tickers||[]).join(', ')||'none'+'</span></div>'
-      +'<div class="step"><span class="step-label">Decision</span><br>'
-      +'<span class="step-value" style="color:#484f58">Evaluating...</span></div>';
+  const cl = m.classification;
+  let classHtml = '<span style="color:#484f58">not classified</span>';
+  if (cl) {
+    const tone = cl.tone||'neutral';
+    classHtml = cl.category+'/'+cl.sub_category
+      +' <span class="evt-badge badge-'+tone+'">'+tone+'</span>'
+      +(cl.is_regular?' <span class="evt-badge badge-regular">SCHED</span>':'')
+      +(cl.surprise!=null?' <b style="color:#58a6ff">['+cl.surprise+']</b>':'')
+      +(!cl.from_cache?' <span style="color:#d29922">[uncached]</span>':'');
   }
 
-  if (fill) {
-    // Trade executed — show full pipeline
-    const side = fill.side;
-    card.className = 'decision-card decision-'+side;
-    const parts = (fill.reason||'').split('/');
-    card.innerHTML =
-      '<div class="step"><span class="step-label">Strategy</span><br>'
-      +'<span class="step-value">'+fill.strategy+'</span></div>'
-      +'<div class="step"><span class="step-label">Category → Impact Lookup</span><br>'
-      +'<span class="step-value">'+parts[0]+' / '+parts.slice(1).join('/')+'</span></div>'
-      +'<div class="step"><span class="step-label">Action</span><br>'
-      +'<span class="step-highlight" style="color:'+(side==='buy'?'#3fb950':'#f85149')+'">'
-      +side.toUpperCase()+' '+fill.ticker+' @ $'+fill.price+' (qty: '+fill.qty+')</span></div>';
+  // Per-ticker impact rows sorted by LLM weight (highest first)
+  const tickers = (m.tickers||[]).slice().sort((a,b)=>(b.weight||0)-(a.weight||0));
+  let tickerRows = '';
+  for (const tk of tickers) {
+    const s = tk.impact_stats;
+    const w = tk.weight||0;
+    const barW = Math.max(2, Math.round(w*100));
+    const actionColor = tk.decision==='buy'?'#3fb950':tk.decision==='sell'?'#f85149':'#484f58';
+    const actionText = S.mode==='rebalance'
+      ? (tk.tilt ? (tk.tilt>0?'\u2191':'\u2193')+Math.abs(tk.tilt*100).toFixed(2)+'%' : '\u2014')
+      : (tk.decision?(tk.decision.toUpperCase()):'\u2014');
+    const statsText = s?'n='+s.count+' avg='+(s.avg_bps>=0?'+':'')+s.avg_bps+'bps hit='+s.hit_rate+'%':'no data';
+    const wPct = Math.round(w*100);
+    tickerRows +=
+      '<div style="display:flex;align-items:center;gap:5px;padding:2px 0;border-bottom:1px solid #21262d">'
+      +'<span style="width:36px;color:#58a6ff;font-weight:bold">'+tk.ticker+'</span>'
+      +'<span style="width:28px;text-align:right;color:#8b949e;font-size:9px">'+wPct+'%</span>'
+      +'<div style="width:40px;height:6px;background:#21262d;border-radius:3px;overflow:hidden">'
+      +'<div style="width:'+barW+'%;height:100%;background:'+(w>=0.7?'#58a6ff':w>=0.4?'#8b949e':'#484f58')+';border-radius:3px"></div></div>'
+      +'<span style="flex:1;font-family:monospace;font-size:9px;color:#8b949e">'+statsText+'</span>'
+      +'<span style="width:32px;text-align:right;color:'+actionColor+';font-size:10px;font-weight:bold">'+actionText+'</span>'
+      +'</div>';
   }
+
+  // Reason: pick the most informative one (first traded, or first pass)
+  const tradedTk = tickers.find(t=>t.decision!=null);
+  const reason = tradedTk?tradedTk.reason:(tickers[0]?tickers[0].reason:'');
+
+  card.innerHTML =
+    '<div class="step"><span class="step-label">Event</span><br>'
+    +'<span class="step-value">'+(m.headline||'').slice(0,80)+'</span></div>'
+    +'<div class="step"><span class="step-label">Classification</span><br>'
+    +'<span class="step-value">'+classHtml+'</span></div>'
+    +'<div class="step"><span class="step-label">Ticker Impact</span>'
+    +'<div style="padding:3px 0">'+tickerRows+'</div></div>'
+    +'<div class="step"><span class="step-label">Decision</span><br>'
+    +'<span class="step-value" style="font-size:10px">'+reason+'</span></div>';
 
   el.insertBefore(card, el.firstChild);
-  if (el.children.length > 30) el.removeChild(el.lastChild);
+  if (el.children.length > 50) el.removeChild(el.lastChild);
+}
+
+function onRebal(m) {
+  const ts = new Date(m.t*1000).toISOString().slice(5,16).replace('T',' ');
+  const c = m.side==='buy'?'pnl-up':'pnl-dn';
+  const wDelta = (m.target_w - m.current_w);
+  const arrow = wDelta > 0 ? '\u2191' : '\u2193';
+  document.getElementById('trade-list').insertAdjacentHTML('afterbegin',
+    '<div class="trade-item"><span class="'+c+'">'+m.side.toUpperCase()+'</span> '
+    +m.ticker+' @'+m.price+' '
+    +'<span style="color:#58a6ff">'+arrow+(Math.abs(wDelta)*100).toFixed(1)+'%</span> '
+    +'<span style="color:#8b949e">'+ts+'</span></div>');
+  if (m.ticker===S.focused) {
+    S.markers.push({time:m.t, position:m.side==='buy'?'belowBar':'aboveBar',
+      color:m.side==='buy'?'#00ff8844':'#ff444444',
+      shape:m.side==='buy'?'arrowUp':'arrowDown',
+      text:(wDelta>0?'+':'')+(wDelta*100).toFixed(1)+'%'});
+    try { S.mainSeries.setMarkers(S.markers); } catch(e) {}
+  }
+}
+
+function onAllocation(m) {
+  document.getElementById('portfolio-value').textContent='$'+m.value.toLocaleString(undefined,{maximumFractionDigits:0});
+  const baseW = 1.0 / Object.keys(m.weights).length;
+  const tb = document.getElementById('pos-body'); tb.innerHTML='';
+  const entries = Object.entries(m.weights).sort((a,b)=>
+    Math.abs(m.tilts[b[0]]||0) - Math.abs(m.tilts[a[0]]||0));
+  for (const [ticker, weight] of entries) {
+    const tilt = m.tilts[ticker]||0;
+    const target = m.targets[ticker]||baseW;
+    const dev = weight - baseW;
+    const color = dev>0.005?'#3fb950':dev<-0.005?'#f85149':'#8b949e';
+    tb.innerHTML+='<tr>'
+      +'<td style="text-align:left;color:#58a6ff">'+ticker+'</td>'
+      +'<td style="color:'+color+'">'+(weight*100).toFixed(1)+'%</td>'
+      +'<td style="color:#8b949e">'+(target*100).toFixed(1)+'%</td>'
+      +'<td style="color:'+(tilt>0?'#3fb950':tilt<0?'#f85149':'#8b949e')+'">'
+      +(tilt>0?'+':'')+(tilt*100).toFixed(2)+'%</td></tr>';
+  }
+  document.getElementById('pos-count').textContent=entries.length+' tickers';
+}
+
+function onRefit(m) {
+  const el = document.getElementById('decisions');
+  const card = document.createElement('div');
+  card.className = 'decision-card';
+  card.style.borderLeft = '3px solid #d29922';
+  card.style.background = '#1a1500';
+  const ts = new Date(m.t*1000).toISOString().slice(0,16).replace('T',' ');
+  const emb = m.embargo_until ? m.embargo_until.slice(11,16) : '??';
+  card.innerHTML =
+    '<div class="step"><span class="step-label" style="color:#d29922">Walk-Forward Refit</span><br>'
+    +'<span class="step-value">Refitted at '+ts+'</span></div>'
+    +'<div class="step"><span class="step-label">Embargo</span><br>'
+    +'<span class="step-value">Trading suppressed until '+emb+' UTC</span></div>';
+  el.insertBefore(card, el.firstChild);
 }
 
 // ── Message Router ──
@@ -371,6 +439,10 @@ function handle(m) {
     case 'playback': onPlayback(m); break;
     case 'events_preview': onEventsPreview(m); break;
     case 'seek_done': onSeekDone(m); break;
+    case 'decision': onDecision(m); break;
+    case 'refit': onRefit(m); break;
+    case 'rebal': onRebal(m); break;
+    case 'allocation': onAllocation(m); break;
     case 'batch': m.msgs.forEach(handle); break;
     case 'init':
       if (S.tickers.length>0) {
@@ -380,12 +452,17 @@ function handle(m) {
         document.getElementById('decisions').innerHTML='';
       }
       S.tickers=m.tickers;
+      S.mode=m.mode||'discrete';
       if(!S.tickers.includes(S.focused)) S.focused=S.tickers[0];
       m.tickers.forEach(t=>{S.barBuf[t]=[];});
       buildTickerList();
       focusTicker(S.focused);
-      document.getElementById('sim-info').textContent='Ready — click ▶ Play';
+      document.getElementById('sim-info').textContent='Ready — click ▶ Play ('+S.mode+')';
       document.getElementById('portfolio-value').textContent='$'+m.portfolio_notional.toLocaleString();
+      if(S.mode==='rebalance'){
+        document.querySelector('#pos-table thead tr').innerHTML='<th>Ticker</th><th>Weight</th><th>Target</th><th>Tilt</th>';
+        document.querySelector('#trades-box h3').textContent='Rebalance Log';
+      }
       break;
   }
 }
@@ -399,6 +476,7 @@ function connect() {
 }
 function doPlay(){if(S.ws)S.ws.send(JSON.stringify({cmd:'play'}));}
 function doPause(){if(S.ws)S.ws.send(JSON.stringify({cmd:'pause'}));}
+function doReset(){if(S.ws)S.ws.send(JSON.stringify({cmd:'seek',pct:0}));}
 function setSpd(btn){
   if(S.ws)S.ws.send(JSON.stringify({cmd:'speed',value:btn.dataset.s}));
   document.querySelectorAll('.speed-btn').forEach(b=>b.classList.remove('active'));

@@ -35,7 +35,7 @@ log = logging.getLogger("preclassify")
 CACHE_PATH = Path(__file__).resolve().parent / "events_classified_cache.json"
 
 BATCH_PROMPT = """\
-You are a financial event tagger. Classify each headline below into a category.
+You are a financial event tagger. Classify each headline below into a category and assess per-ticker impact weights.
 
 Target tickers for impact assessment: {tickers}
 
@@ -47,15 +47,23 @@ For EACH event, output a JSON object with:
   "tech_sector", "labor_market", "fiscal_policy", "defense_military",
   "market_structure", "other"
 - "sub_category": More specific (e.g., "rate_decision", "tariff_escalation", "q3_earnings")
-- "affected_tickers": Which of [{tickers}] are likely relevant. Can be empty.
+- "sector_impact": Ordered list of most-to-least impacted sectors (e.g., ["technology", "broad_market", "financials"])
+- "ticker_impact_weights": Object mapping ticker → weight (0.0 to 1.0). Weight reflects how DIRECTLY the event hits each ticker:
+  - 1.0 = directly about this company (e.g., TSLA earnings → TSLA: 1.0)
+  - 0.5-0.8 = same sector, strong spillover (e.g., NVDA guidance → AMD: 0.6)
+  - 0.2-0.4 = broad market or indirect (e.g., Fed decision → SPY: 0.8, AAPL: 0.3)
+  - Omit tickers with negligible impact (<0.1)
 
-Output a JSON array of objects, one per event. Use CONSISTENT category labels —
-the same type of event must always get the same category across all batches.
+Rules:
+- You are ONLY tagging. Do NOT predict direction, sentiment, or market impact.
+- Use CONSISTENT labels so the same type of event always gets the same category.
+- ticker_impact_weights replaces affected_tickers — include only tickers from the target list.
+- Output a JSON array of objects, one per event. No markdown, no commentary.
 
 Events to classify:
 {events_block}
 
-Output ONLY the JSON array. No markdown, no commentary."""
+Output ONLY the JSON array."""
 
 
 def fetch_events(start_date: str | None, end_date: str | None) -> list[dict]:
@@ -95,7 +103,7 @@ def classify_batch(client: anthropic.Anthropic, events: list[dict],
 
     try:
         resp = client.messages.create(
-            model=model, max_tokens=4096,
+            model=model, max_tokens=8192,
             messages=[{"role": "user", "content": prompt}],
         )
     except Exception as e:
@@ -136,6 +144,8 @@ def main() -> int:
     parser.add_argument("--tickers", nargs="+", default=["SPY", "QQQ"])
     parser.add_argument("--batches", type=int, default=5)
     parser.add_argument("--model", default="claude-sonnet-4-6")
+    parser.add_argument("--reclassify", action="store_true",
+                        help="Force reclassify all events, ignoring existing cache")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -151,7 +161,11 @@ def main() -> int:
     events = fetch_events(args.start, args.end)
     log.info("fetched %d events for %s to %s", len(events), args.start, args.end)
 
-    cache = load_existing_cache()
+    if args.reclassify:
+        cache = {}
+        log.info("--reclassify: clearing cache, will reclassify all %d events", len(events))
+    else:
+        cache = load_existing_cache()
     uncached = [e for e in events if str(e["event_id"]) not in cache]
     log.info("already cached: %d, need classification: %d", len(events) - len(uncached), len(uncached))
 
@@ -177,10 +191,16 @@ def main() -> int:
         for r in results:
             eid = str(r.get("event_id", ""))
             if eid:
+                weights = r.get("ticker_impact_weights", {})
+                affected = r.get("affected_tickers", [])
+                if not weights and affected:
+                    weights = {t: 0.5 for t in affected}
                 cache[eid] = {
                     "event_category": r.get("event_category", "other"),
                     "sub_category": r.get("sub_category", ""),
-                    "affected_tickers": r.get("affected_tickers", []),
+                    "affected_tickers": list(weights.keys()) if weights else affected,
+                    "sector_impact": r.get("sector_impact", []),
+                    "ticker_impact_weights": weights,
                 }
                 total_classified += 1
 

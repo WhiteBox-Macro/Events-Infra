@@ -26,6 +26,7 @@ import websockets
 
 from dbkit.constants import load_dotenv_files
 from replay_driver import ReplayDriver
+from strategies.sonnet_event_strategy import SonnetEventStrategy
 
 log = logging.getLogger("dashboard.server")
 
@@ -35,6 +36,9 @@ _driver: ReplayDriver = None
 
 class DashboardHTTPHandler(SimpleHTTPRequestHandler):
     ws_port = 8767
+
+    def address_string(self):
+        return self.client_address[0]
 
     def do_GET(self):
         if self.path in ("/", "/index.html"):
@@ -135,6 +139,8 @@ def main():
     parser.add_argument("--start", default="2024-10-01")
     parser.add_argument("--end", default="2024-12-31")
     parser.add_argument("--capital", type=float, default=1_000_000, help="Initial portfolio capital")
+    parser.add_argument("--mode", choices=["discrete", "rebalance"], default="discrete",
+                        help="discrete (original) or rebalance (continuous portfolio)")
     parser.add_argument("--port", type=int, default=8766)
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
@@ -155,7 +161,10 @@ def main():
     if args.parquet_dir:
         config.parquet_dir = Path(args.parquet_dir)
 
-    _driver = ReplayDriver(config)
+    strategy = SonnetEventStrategy(tickers=args.tickers, cache_only=True)
+    log.info("loaded %d cached classifications, mode=%s", len(strategy._cache), args.mode)
+    _driver = ReplayDriver(config, strategies=[strategy],
+                           rebalance_mode=(args.mode == "rebalance"))
 
     ws_port = args.port + 1
     http_thread = threading.Thread(target=run_http_server, args=(args.port, ws_port), daemon=True)

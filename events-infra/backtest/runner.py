@@ -13,7 +13,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -41,14 +41,35 @@ def run_backtest(config: BacktestConfig, strategies: list) -> dict:
     )
 
     stats = {"bar_ticks": 0, "event_ticks": 0, "orders_submitted": 0,
-             "fills": 0, "exits": 0, "timestamps": 0}
+             "fills": 0, "exits": 0, "timestamps": 0, "refits": 0}
     last_prices: dict[str, float] = {}
     last_bar_per_ticker: dict[str, BarTick] = {}
     t0 = time.monotonic()
 
+    wf = config.walk_forward
+    wf_sim_start: datetime | None = None
+    wf_last_refit: datetime | None = None
+    wf_embargo_until: datetime | None = None
+
     for ts, ticks in timeline.iter_grouped():
         stats["timestamps"] += 1
         ctx.set_time(ts)
+
+        if wf_sim_start is None:
+            wf_sim_start = ts
+
+        elapsed_days = (ts - wf_sim_start).total_seconds() / 86400
+        if elapsed_days >= wf.initial_train_days:
+            needs_refit = wf_last_refit is None or \
+                (ts - wf_last_refit).total_seconds() / 86400 >= wf.refit_interval_days
+            if needs_refit:
+                for strat in strategies:
+                    strat.refit(wf_sim_start, ts, ctx)
+                wf_last_refit = ts
+                wf_embargo_until = ts + timedelta(hours=wf.embargo_hours)
+                stats["refits"] += 1
+
+        in_embargo = wf_embargo_until and ts < wf_embargo_until
 
         bars = [t for t in ticks if isinstance(t, BarTick)]
         events = [t for t in ticks if isinstance(t, EventTick)]
@@ -97,6 +118,8 @@ def run_backtest(config: BacktestConfig, strategies: list) -> dict:
             stats["event_ticks"] += 1
             for strat in strategies:
                 orders = strat.on_event(event, ctx)
+                if in_embargo:
+                    orders = []
                 for order in orders:
                     # Fill at most recent bar's close for this ticker
                     last_bar = last_bar_per_ticker.get(order.ticker)

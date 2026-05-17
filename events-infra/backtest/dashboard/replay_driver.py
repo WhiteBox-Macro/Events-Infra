@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Callable, Awaitable
+
+import numpy as np
 
 import sys
 BACKTEST_DIR = Path(__file__).resolve().parent.parent
@@ -25,6 +27,7 @@ from tick import BarTick, EventTick
 from timeline import TimelineMerger
 from engine import StrategyContext
 from order_manager import OrderManager
+from portfolio_allocator import PortfolioAllocator
 
 log = logging.getLogger("dashboard.replay")
 
@@ -35,36 +38,20 @@ SPEED_MAP = {
 
 
 class ReplayDriver:
-    def __init__(self, config: BacktestConfig, strategies: list = None):
+    def __init__(self, config: BacktestConfig, strategies: list = None,
+                 rebalance_mode: bool = False):
         self.config = config
         self.strategies = strategies or []
+        self.rebalance_mode = rebalance_mode
 
         log.info("loading timeline...")
         self.timeline = TimelineMerger(config)
 
-        # Lightweight materialization: store (timestamp, bar_indices, event_indices)
-        # instead of full BarTick/EventTick objects. Objects created on-the-fly.
-        log.info("building lightweight index...")
-        self._timestamps = []    # [datetime]
-        self._group_bars = []    # [[(ticker, df_row_idx), ...]]
-        self._group_events = []  # [[event_list_idx, ...]]
-        self._event_list = []    # [raw event dict from DB]
+        log.info("building lightweight index (vectorized)...")
+        self._timestamps, self._group_bars, self._group_events, self._event_list = \
+            self._build_index_fast(self.timeline)
 
-        event_idx = 0
-        for ts, ticks in self.timeline.iter_grouped():
-            bars = []
-            evts = []
-            for t in ticks:
-                if isinstance(t, BarTick):
-                    bars.append((t.ticker, t.bar_index))
-                elif isinstance(t, EventTick):
-                    self._event_list.append(t)
-                    evts.append(len(self._event_list) - 1)
-            self._timestamps.append(ts)
-            self._group_bars.append(bars)
-            self._group_events.append(evts)
-
-        log.info("ready: %d groups, %d events (lightweight)", len(self._timestamps), len(self._event_list))
+        log.info("ready: %d groups, %d events", len(self._timestamps), len(self._event_list))
 
         self._all_events = []
         for ev in self._event_list:
@@ -112,11 +99,132 @@ class ReplayDriver:
 
     def _reset_engine(self):
         self.ctx = StrategyContext(self.timeline.bar_dfs, self.config.portfolio_notional)
-        self.order_mgr = OrderManager(
-            slippage_bps=self.config.slippage_bps,
-            portfolio_notional=self.config.portfolio_notional,
-        )
+        if self.rebalance_mode:
+            self.allocator = PortfolioAllocator(
+                tickers=self.config.tickers,
+                notional=self.config.portfolio_notional,
+                slippage_bps=self.config.slippage_bps,
+            )
+            self.order_mgr = None
+        else:
+            self.order_mgr = OrderManager(
+                slippage_bps=self.config.slippage_bps,
+                portfolio_notional=self.config.portfolio_notional,
+            )
+            self.allocator = None
         self._last_bar: dict[str, BarTick] = {}
+        self._wf_sim_start: datetime | None = self._timestamps[0] if self._timestamps else None
+        self._wf_last_refit: datetime | None = None
+        self._wf_embargo_until: datetime | None = None
+        for strat in self.strategies:
+            if hasattr(strat, 'reset'):
+                strat.reset()
+
+    @staticmethod
+    def _build_index_fast(timeline: TimelineMerger):
+        """Build lightweight index via numpy vectorized merge instead of Python iteration."""
+        import time as _time
+        t0 = _time.monotonic()
+
+        ticker_list = sorted(timeline.bar_dfs.keys())
+        ticker_to_id = {t: i for i, t in enumerate(ticker_list)}
+
+        chunks = []
+        for ticker in ticker_list:
+            df = timeline.bar_dfs[ticker]
+            n = len(df)
+            if n == 0:
+                continue
+            ts_ns = df["timestamp"].values.astype("int64")
+            ticker_ids = np.full(n, ticker_to_id[ticker], dtype=np.int32)
+            row_indices = np.arange(n, dtype=np.int32)
+            priority = np.zeros(n, dtype=np.int8)
+            event_idx = np.full(n, -1, dtype=np.int32)
+            chunks.append(np.column_stack([
+                ts_ns.view(np.int64),
+                priority.astype(np.int64),
+                ticker_ids.astype(np.int64),
+                row_indices.astype(np.int64),
+                event_idx.astype(np.int64),
+            ]))
+
+        event_list = []
+        for i, ev in enumerate(timeline.events):
+            ts = ev["publish_time"]
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            tick = EventTick(
+                event_id=str(ev["event_id"]), publish_time=ts,
+                event_type=ev["event_type"], is_regular=bool(ev["is_regular"]),
+                headline=ev.get("headline"),
+                inferred_tone=ev.get("inferred_tone", "neutral"),
+                inferred_magnitude=ev.get("inferred_magnitude", "minor"),
+                tickers=ev.get("tickers") or [],
+                primary_ticker=ev.get("primary_ticker"),
+                surprise=ev.get("surprise"),
+                indicator_name=ev.get("indicator_name"),
+                metadata=ev.get("metadata") or {},
+            )
+            event_list.append(tick)
+            ts_ns = np.int64(int(ts.timestamp() * 1e9))
+            chunks.append(np.array([[ts_ns, 1, -1, -1, i]], dtype=np.int64))
+
+        all_data = np.concatenate(chunks, axis=0)
+        order = np.lexsort((all_data[:, 2], all_data[:, 1], all_data[:, 0]))
+        all_data = all_data[order]
+
+        ts_col = all_data[:, 0]
+        breaks = np.where(np.diff(ts_col) != 0)[0] + 1
+        groups = np.split(np.arange(len(all_data)), breaks)
+
+        timestamps = []
+        group_bars = []
+        group_events = []
+
+        for grp_idx in groups:
+            rows = all_data[grp_idx]
+            ts_ns_val = rows[0, 0]
+            ts_dt = datetime.fromtimestamp(ts_ns_val / 1e9, tz=timezone.utc)
+            timestamps.append(ts_dt)
+
+            bars = []
+            evts = []
+            for row in rows:
+                if row[1] == 0:
+                    bars.append((ticker_list[row[2]], int(row[3])))
+                else:
+                    evts.append(int(row[4]))
+            group_bars.append(bars)
+            group_events.append(evts)
+
+        elapsed = _time.monotonic() - t0
+        log.info("vectorized index: %d groups in %.2fs (%.0f groups/s)",
+                 len(timestamps), elapsed, len(timestamps) / elapsed if elapsed > 0 else 0)
+
+        return timestamps, group_bars, group_events, event_list
+
+    def _maybe_refit(self, ts: datetime) -> dict | None:
+        if not self.strategies or not self._wf_sim_start:
+            return None
+        wf = self.config.walk_forward
+        elapsed_days = (ts - self._wf_sim_start).total_seconds() / 86400
+        if elapsed_days < wf.initial_train_days:
+            return None
+        if self._wf_last_refit is not None:
+            days_since = (ts - self._wf_last_refit).total_seconds() / 86400
+            if days_since < wf.refit_interval_days:
+                return None
+        self._wf_last_refit = ts
+        self._wf_embargo_until = ts + timedelta(hours=wf.embargo_hours)
+        for strat in self.strategies:
+            strat.refit(self._wf_sim_start, ts, self.ctx)
+        return {
+            "type": "refit",
+            "t": int(ts.timestamp()),
+            "train_start": self._wf_sim_start.isoformat(),
+            "train_end": ts.isoformat(),
+            "embargo_until": self._wf_embargo_until.isoformat(),
+        }
 
     @property
     def progress_pct(self) -> float:
@@ -151,6 +259,7 @@ class ReplayDriver:
             "total_groups": self._num_groups,
             "total_events": len(self._all_events),
             "portfolio_notional": self.config.portfolio_notional,
+            "mode": "rebalance" if self.rebalance_mode else "discrete",
         }
 
     def get_events_from_cursor(self, n: int = 100) -> list[dict]:
@@ -237,10 +346,13 @@ class ReplayDriver:
             # Playing — process next group
             ts, bars, events = self._get_group(self._cursor)
             self._cursor += 1
-            msgs = self._process_group(ts, bars, events)
+            if self.rebalance_mode:
+                msgs = self._process_group_rebal(ts, bars, events)
+            else:
+                msgs = self._process_group(ts, bars, events)
 
             speed_secs = SPEED_MAP.get(self._speed, 60)
-            has_important = any(m["type"] in ("event", "fill", "exit") for m in msgs)
+            has_important = any(m["type"] in ("event", "fill", "exit", "rebal", "allocation") for m in msgs)
 
             if speed_secs == 0:  # MAX
                 batch_buf.extend(msgs)
@@ -278,22 +390,164 @@ class ReplayDriver:
     def _ff_group(self, ts, bars, events):
         """Fast-forward one group (no messages, no sleep)."""
         self.ctx.set_time(ts)
+        self._maybe_refit(ts)
+
+        if self.rebalance_mode:
+            for bar in bars:
+                self.ctx.advance_cursor(bar.ticker, bar.bar_index, bar.close)
+                self._last_bar[bar.ticker] = bar
+            if not self.allocator.initialized and all(t in self._last_bar for t in self.allocator.tickers):
+                all_prices = {t: self._last_bar[t].close for t in self.allocator.tickers
+                              if t in self._last_bar}
+                self.allocator.initialize_positions(all_prices, ts)
+            self.ctx.set_positions({})
+            for bar in bars:
+                for strat in self.strategies:
+                    strat.on_bar(bar, self.ctx)
+            if self.allocator.initialized:
+                self.allocator.decay_tilts(dt_bars=1)
+                self.allocator.mark_to_market(
+                    {t: self._last_bar[t].close for t in self.allocator.tickers if t in self._last_bar})
+            for event in events:
+                for strat in self.strategies:
+                    if hasattr(strat, 'compute_tilts'):
+                        tilts = strat.compute_tilts(event, self.ctx)
+                        if tilts and self.allocator.initialized:
+                            self.allocator.apply_event_tilts(tilts)
+            if self.allocator.initialized and events:
+                current_prices = {t: self._last_bar[t].close for t in self.allocator.tickers
+                                  if t in self._last_bar}
+                rebal_orders = self.allocator.get_rebal_orders(current_prices)
+                if rebal_orders:
+                    self.allocator.execute_rebal(rebal_orders, current_prices, ts)
+        else:
+            for bar in bars:
+                self.order_mgr.process_bar(bar, ts)
+                self.order_mgr.mark_positions(bar)
+                self.ctx.advance_cursor(bar.ticker, bar.bar_index, bar.close)
+                self._last_bar[bar.ticker] = bar
+            self.ctx.set_positions(self.order_mgr.positions)
+            for bar in bars:
+                for strat in self.strategies:
+                    strat.on_bar(bar, self.ctx)
+            for event in events:
+                for strat in self.strategies:
+                    strat.on_event(event, self.ctx)
+
+    def _process_group_rebal(self, ts: datetime, bars: list, events: list) -> list[dict]:
+        self.ctx.set_time(ts)
+        msgs = []
+
+        refit_msg = self._maybe_refit(ts)
+        if refit_msg:
+            msgs.append(refit_msg)
+
+        in_embargo = self._wf_embargo_until and ts < self._wf_embargo_until
+
+        prices = {}
         for bar in bars:
-            self.order_mgr.process_bar(bar, ts)
-            self.order_mgr.mark_positions(bar)
             self.ctx.advance_cursor(bar.ticker, bar.bar_index, bar.close)
             self._last_bar[bar.ticker] = bar
-        self.ctx.set_positions(self.order_mgr.positions)
+            prices[bar.ticker] = bar.close
+            msgs.append({"type": "bar", "ticker": bar.ticker, "t": int(ts.timestamp()),
+                         "o": round(bar.open, 2), "h": round(bar.high, 2),
+                         "l": round(bar.low, 2), "c": round(bar.close, 2), "v": bar.volume})
+
+        if not self.allocator.initialized and all(t in self._last_bar for t in self.allocator.tickers):
+            all_prices = {t: self._last_bar[t].close for t in self.allocator.tickers
+                          if t in self._last_bar}
+            init_orders = self.allocator.initialize_positions(all_prices, ts)
+            for o in init_orders:
+                msgs.append({"type": "rebal", "ticker": o.ticker, "side": o.side,
+                             "qty": round(o.qty, 4), "price": round(all_prices.get(o.ticker, 0), 2),
+                             "target_w": round(o.target_weight, 4), "current_w": 0.0,
+                             "reason": "initial_alloc", "t": int(ts.timestamp())})
+
+        self.ctx.set_positions({})
         for bar in bars:
             for strat in self.strategies:
                 strat.on_bar(bar, self.ctx)
+
+        if self.allocator.initialized:
+            self.allocator.decay_tilts(dt_bars=1)
+            self.allocator.mark_to_market(
+                {t: self._last_bar[t].close for t in self.allocator.tickers if t in self._last_bar})
+
         for event in events:
+            msgs.append({"type": "event", "id": event.event_id,
+                         "t": int(event.publish_time.timestamp()),
+                         "headline": event.headline, "event_type": event.event_type,
+                         "tone": event.inferred_tone, "magnitude": event.inferred_magnitude,
+                         "tickers": list(event.tickers) if event.tickers else [],
+                         "surprise": float(event.surprise) if event.surprise is not None else None,
+                         "is_regular": event.is_regular})
             for strat in self.strategies:
-                strat.on_event(event, self.ctx)
+                if hasattr(strat, 'compute_tilts'):
+                    tilts = strat.compute_tilts(event, self.ctx)
+                    if not in_embargo and tilts and self.allocator.initialized:
+                        self.allocator.apply_event_tilts(tilts)
+
+                if hasattr(strat, 'last_decisions') and strat.last_decisions:
+                    decs = strat.last_decisions
+                    first = decs[0]
+                    ticker_evals = []
+                    for dec in decs:
+                        d = {**dec}
+                        if in_embargo and d.get("tilt", 0) != 0:
+                            d["tilt"] = 0.0
+                            d["reason"] = "embargo active (post-refit)"
+                        ticker_evals.append({
+                            "ticker": d.get("ticker", ""),
+                            "weight": d.get("weight", 0.5),
+                            "impact_stats": d.get("impact_stats"),
+                            "decision": d.get("decision"),
+                            "tilt": d.get("tilt", 0.0),
+                            "confidence": d.get("confidence", 0),
+                            "reason": d.get("reason", ""),
+                        })
+                    msgs.append({
+                        "type": "decision", "event_id": first.get("event_id"),
+                        "headline": first.get("headline", ""),
+                        "classification": first.get("classification"),
+                        "tickers": ticker_evals, "best_side": None,
+                        "t": int(ts.timestamp()),
+                    })
+
+        if self.allocator.initialized and events:
+            current_prices = {t: self._last_bar[t].close for t in self.allocator.tickers
+                              if t in self._last_bar}
+            rebal_orders = self.allocator.get_rebal_orders(current_prices)
+            if rebal_orders:
+                fills = self.allocator.execute_rebal(rebal_orders, current_prices, ts)
+                for f in fills:
+                    msgs.append({"type": "rebal", "ticker": f["ticker"], "side": f["side"],
+                                 "qty": f["qty"], "price": f["price"],
+                                 "target_w": f["target_w"], "current_w": f["current_w"],
+                                 "reason": f["reason"], "t": int(ts.timestamp())})
+
+        has_rebal = any(m.get("type") == "rebal" for m in msgs)
+        if (has_rebal or self._cursor % 30 == 0) and self.allocator.initialized:
+            msgs.append({
+                "type": "allocation",
+                "weights": {t: round(w, 4) for t, w in self.allocator.get_weights().items()},
+                "targets": {t: round(w, 4) for t, w in self.allocator.get_target_weights().items()},
+                "tilts": {t: round(v, 6) for t, v in self.allocator.get_tilts().items()},
+                "value": round(self.allocator.nav, 2),
+                "cash": round(self.allocator.cash, 2),
+                "t": int(ts.timestamp()),
+            })
+
+        return msgs
 
     def _process_group(self, ts: datetime, bars: list, events: list) -> list[dict]:
         self.ctx.set_time(ts)
         msgs = []
+
+        refit_msg = self._maybe_refit(ts)
+        if refit_msg:
+            msgs.append(refit_msg)
+
+        in_embargo = self._wf_embargo_until and ts < self._wf_embargo_until
 
         for bar in bars:
             exit_fills = self.order_mgr.process_bar(bar, ts)
@@ -331,6 +585,8 @@ class ReplayDriver:
                          "is_regular": event.is_regular})
             for strat in self.strategies:
                 orders = strat.on_event(event, self.ctx)
+                if in_embargo:
+                    orders = []
                 for order in orders:
                     lb = self._last_bar.get(order.ticker)
                     if lb:
@@ -341,6 +597,35 @@ class ReplayDriver:
                                          "ticker": order.ticker, "side": order.side,
                                          "qty": round(fill.qty, 4), "price": round(fill.price, 2),
                                          "reason": order.reason, "t": int(ts.timestamp())})
+                if hasattr(strat, 'last_decisions') and strat.last_decisions:
+                    decs = strat.last_decisions
+                    first = decs[0]
+                    ticker_evals = []
+                    best_side = None
+                    for dec in decs:
+                        d = {**dec}
+                        if in_embargo and d.get("decision") is not None:
+                            d["decision"] = None
+                            d["reason"] = "embargo active (post-refit)"
+                        if d.get("decision") is not None:
+                            best_side = d["decision"]
+                        ticker_evals.append({
+                            "ticker": d.get("ticker", ""),
+                            "weight": d.get("weight", 0.5),
+                            "impact_stats": d.get("impact_stats"),
+                            "decision": d.get("decision"),
+                            "confidence": d.get("confidence", 0),
+                            "reason": d.get("reason", ""),
+                        })
+                    msgs.append({
+                        "type": "decision",
+                        "event_id": first.get("event_id"),
+                        "headline": first.get("headline", ""),
+                        "classification": first.get("classification"),
+                        "tickers": ticker_evals,
+                        "best_side": best_side,
+                        "t": int(ts.timestamp()),
+                    })
 
         has_trade = any(m["type"] in ("fill", "exit") for m in msgs)
         if has_trade or self._cursor % 30 == 0:

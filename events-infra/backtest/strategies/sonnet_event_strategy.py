@@ -34,9 +34,9 @@ log = logging.getLogger("strategy.sonnet_event")
 # ── Strategy parameters (deterministic, no LLM involvement) ─────────────
 HOLDING_BARS = 15
 POSITION_SIZE_PCT = 0.05        # 5% of portfolio per trade
-MIN_OBS_TO_TRADE = 3            # need N observations before trading a category
-MIN_HIT_RATE = 0.55             # directional consistency threshold
-MIN_AVG_RETURN_BPS = 2.0        # minimum |avg return| in bps to be worth trading
+MIN_OBS_TO_TRADE = 3
+MIN_HIT_RATE = 0.55
+MIN_AVG_RETURN_BPS = 2.0
 MAX_CONCURRENT_POSITIONS = 3    # per strategy
 
 # ── LLM prompt — classification ONLY, no direction/opinion ──────────────
@@ -157,40 +157,37 @@ class ImpactTable:
 
 # ── Decision engine: pure algorithm, no LLM ─────────────────────────────
 
-def decide_trade(stats: Optional[_CatStats], tone: str) -> tuple[str | None, float]:
+def decide_trade(stats: Optional[_CatStats], tone: str) -> tuple[str | None, float, str]:
     """Deterministic trade decision from tone-adjusted category statistics.
 
-    If tone-adjusted avg is positive and consistent, it means "tone reliably
-    predicts direction." Then:
-    - Bullish tone → buy (tone says up, history confirms tone works)
-    - Bearish tone → sell (tone says down, history confirms tone works)
-    - Neutral/mixed → no trade (no directional tone to act on)
-
-    If tone-adjusted avg is negative, tone is WRONG for this category —
-    trade OPPOSITE to tone.
+    Returns (side, confidence, reason) where reason explains the decision.
     """
-    if stats is None or stats.count < MIN_OBS_TO_TRADE:
-        return None, 0.0
+    if stats is None:
+        return None, 0.0, "no impact data"
+
+    if stats.count < MIN_OBS_TO_TRADE:
+        return None, 0.0, f"insufficient obs ({stats.count}/{MIN_OBS_TO_TRADE})"
 
     if tone in ("neutral", "mixed"):
-        return None, 0.0
+        return None, 0.0, "neutral/mixed tone"
 
     avg_bps = abs(stats.mean * 10000)
     if avg_bps < MIN_AVG_RETURN_BPS:
-        return None, 0.0
+        return None, 0.0, f"avg {avg_bps:.1f}bps below {MIN_AVG_RETURN_BPS}bps threshold"
 
     tone_reliable = stats.mean > 0 and stats.hit_rate >= MIN_HIT_RATE
     tone_contrarian = stats.mean < 0 and (1 - stats.hit_rate) >= MIN_HIT_RATE
 
     if tone_reliable:
         side = "buy" if tone == "bullish" else "sell"
+        confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
+        return side, confidence, f"tone reliable: {stats.count} obs, {avg_bps:.1f}bps avg, {stats.hit_rate:.0%} hit"
     elif tone_contrarian:
         side = "sell" if tone == "bullish" else "buy"
+        confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
+        return side, confidence, f"contrarian: {stats.count} obs, {avg_bps:.1f}bps avg, {1-stats.hit_rate:.0%} contra-hit"
     else:
-        return None, 0.0
-
-    confidence = avg_bps / (stats.std * 10000) if stats.std > 0 else 0.0
-    return side, confidence
+        return None, 0.0, f"hit rate {stats.hit_rate:.0%} inconclusive"
 
 
 # ── Strategy engine ─────────────────────────────────────────────────────
@@ -203,17 +200,29 @@ class SonnetEventStrategy:
 
     name = "sonnet_event"
 
-    def __init__(self, tickers: list[str], model: str = "claude-sonnet-4-6"):
+    def __init__(self, tickers: list[str], model: str = "claude-sonnet-4-6",
+                 cache_only: bool = False):
         self.tickers = tickers
         self.model = model
+        self.cache_only = cache_only
         self._client: anthropic.Anthropic | None = None
         self.impact = ImpactTable()
         self.classification_log: list[dict] = []
         self._last_bar: dict[str, BarTick] = {}
         self._cache: dict[str, dict] = self._load_cache()
+        self.last_decisions: list[dict] = []
+        self._blacklisted: set[tuple[str, str]] = set()
 
-        # Pending: events tagged but awaiting exit to record actual return
         self._pending: list[dict] = []
+
+    def reset(self):
+        """Reset all mutable state for clean replay (seek to 0%)."""
+        self.impact = ImpactTable()
+        self.classification_log.clear()
+        self._last_bar.clear()
+        self.last_decisions.clear()
+        self._blacklisted.clear()
+        self._pending.clear()
 
     def _load_cache(self) -> dict:
         if CACHE_PATH.exists():
@@ -258,21 +267,29 @@ class SonnetEventStrategy:
                         actual_return=ret,
                         event_time=obs["event_time"],
                     )
-                obs["recorded"] = True
+                continue
             remaining.append(obs)
 
         self._pending = remaining
         return []
 
     def on_event(self, tick: EventTick, ctx: StrategyContext) -> list[Order]:
+        self.last_decisions = []
         headline = tick.headline or ""
         if not headline.strip():
             return []
 
-        # Step 1: Look up cache first, fall back to LLM
         cached = self._cache.get(str(tick.event_id))
+        from_cache = cached is not None
         if cached:
             tag = cached
+        elif self.cache_only:
+            tag = {
+                "event_category": tick.event_type,
+                "sub_category": tick.event_type,
+                "ticker_impact_weights": {t: 0.5 for t in self.tickers},
+            }
+            from_cache = False
         else:
             tag = self._classify(headline, tick.publish_time, tick.surprise)
             if tag:
@@ -283,7 +300,9 @@ class SonnetEventStrategy:
 
         category = tag.get("event_category", "other")
         sub_cat = tag.get("sub_category", "")
-        affected = tag.get("affected_tickers") or []
+        weights = tag.get("ticker_impact_weights") or {}
+        affected = list(weights.keys()) if weights else (tag.get("affected_tickers") or [])
+        sector_impact = tag.get("sector_impact") or []
 
         self.classification_log.append({
             "event_id": tick.event_id,
@@ -292,13 +311,11 @@ class SonnetEventStrategy:
             "category": category,
             "sub_category": sub_cat,
             "affected": affected,
+            "weights": weights,
         })
 
-        # Use pre-classified tone from the event as direction differentiator
         tone = tick.inferred_tone
 
-        # Always record pending observation (even if we don't trade)
-        # This passively builds the impact table for ALL events
         for ticker in affected:
             if ticker in self.tickers:
                 last_bar = self._last_bar.get(ticker)
@@ -312,29 +329,78 @@ class SonnetEventStrategy:
                     "bars_elapsed": 0,
                 })
 
-        # Step 2: Algorithm decides from impact table (no LLM involvement)
         orders = []
         open_positions = ctx.positions(self.name)
-        if len(open_positions) >= MAX_CONCURRENT_POSITIONS:
-            return []
+        at_capacity = len(open_positions) >= MAX_CONCURRENT_POSITIONS
 
         for ticker in affected:
             if ticker not in self.tickers:
                 continue
-            if any(p.ticker == ticker for p in open_positions):
+
+            ticker_weight = float(weights.get(ticker, 0.5))
+            classification = {
+                "category": category,
+                "sub_category": sub_cat,
+                "tone": tone,
+                "is_regular": tick.is_regular,
+                "surprise": float(tick.surprise) if tick.surprise is not None else None,
+                "from_cache": from_cache,
+                "sector_impact": sector_impact,
+            }
+
+            if (category, ticker) in self._blacklisted:
+                self.last_decisions.append({
+                    "event_id": tick.event_id,
+                    "headline": headline[:100],
+                    "ticker": ticker,
+                    "classification": classification,
+                    "impact_stats": None,
+                    "decision": None,
+                    "confidence": 0.0,
+                    "reason": "blacklisted at last refit",
+                })
                 continue
 
             stats = self.impact.lookup(category, ticker)
-            side, confidence = decide_trade(stats, tone)
+            impact_snap = None
+            if stats:
+                impact_snap = {
+                    "count": stats.count,
+                    "avg_bps": round(stats.mean * 10000, 2),
+                    "hit_rate": round(stats.hit_rate * 100, 1),
+                    "std_bps": round(stats.std * 10000, 2),
+                }
+
+            side, confidence, reason = decide_trade(stats, tone)
+
+            if at_capacity and side is not None:
+                side = None
+                reason = f"at max positions ({MAX_CONCURRENT_POSITIONS})"
+            elif side is not None and any(p.ticker == ticker for p in open_positions):
+                side = None
+                reason = f"already positioned in {ticker}"
+
+            self.last_decisions.append({
+                "event_id": tick.event_id,
+                "headline": headline[:100],
+                "ticker": ticker,
+                "weight": round(ticker_weight, 2),
+                "classification": classification,
+                "impact_stats": impact_snap,
+                "decision": side,
+                "confidence": round(confidence, 4),
+                "reason": reason,
+            })
 
             if side is None:
                 continue
 
+            scaled_size = POSITION_SIZE_PCT * ticker_weight
             orders.append(Order(
                 strategy=self.name,
                 ticker=ticker,
                 side=side,
-                qty_pct=POSITION_SIZE_PCT,
+                qty_pct=scaled_size,
                 reason=f"{category}/{tone}/{sub_cat}",
                 submitted_at=tick.publish_time,
                 metadata={
@@ -342,14 +408,112 @@ class SonnetEventStrategy:
                     "category": category,
                     "sub_category": sub_cat,
                     "tone": tone,
-                    "impact_n": stats.count,
-                    "impact_avg_bps": round(stats.mean * 10000, 2),
-                    "impact_hit_pct": round(stats.hit_rate * 100, 1),
+                    "impact_n": stats.count if stats else 0,
+                    "impact_avg_bps": round(stats.mean * 10000, 2) if stats else 0,
+                    "impact_hit_pct": round(stats.hit_rate * 100, 1) if stats else 0,
                     "algo_confidence": round(confidence, 4),
                 },
             ))
 
         return orders
+
+    def compute_tilts(self, tick: EventTick, ctx: StrategyContext) -> dict[str, float]:
+        """Compute per-ticker weight tilts for rebalance mode."""
+        from portfolio_allocator import compute_tilt as _compute_tilt
+
+        self.last_decisions = []
+        headline = tick.headline or ""
+        if not headline.strip():
+            return {}
+
+        cached = self._cache.get(str(tick.event_id))
+        from_cache = cached is not None
+        if cached:
+            tag = cached
+        elif self.cache_only:
+            tag = {
+                "event_category": tick.event_type,
+                "sub_category": tick.event_type,
+                "ticker_impact_weights": {t: 0.5 for t in self.tickers},
+            }
+            from_cache = False
+        else:
+            tag = self._classify(headline, tick.publish_time, tick.surprise)
+            if tag:
+                self._cache[str(tick.event_id)] = tag
+
+        if not tag:
+            return {}
+
+        category = tag.get("event_category", "other")
+        sub_cat = tag.get("sub_category", "")
+        weights = tag.get("ticker_impact_weights") or {}
+        affected = list(weights.keys()) if weights else (tag.get("affected_tickers") or [])
+        sector_impact = tag.get("sector_impact") or []
+        tone = tick.inferred_tone
+
+        for ticker in affected:
+            if ticker in self.tickers:
+                last_bar = self._last_bar.get(ticker)
+                self._pending.append({
+                    "category": category, "sub_category": sub_cat,
+                    "tone": tone, "ticker": ticker,
+                    "event_time": tick.publish_time,
+                    "entry_close": last_bar.close if last_bar else None,
+                    "bars_elapsed": 0,
+                })
+
+        tilts = {}
+        for ticker in affected:
+            if ticker not in self.tickers:
+                continue
+
+            ticker_weight = float(weights.get(ticker, 0.5))
+            classification = {
+                "category": category, "sub_category": sub_cat,
+                "tone": tone, "is_regular": tick.is_regular,
+                "surprise": float(tick.surprise) if tick.surprise is not None else None,
+                "from_cache": from_cache, "sector_impact": sector_impact,
+            }
+
+            if (category, ticker) in self._blacklisted:
+                self.last_decisions.append({
+                    "event_id": tick.event_id, "headline": headline[:100],
+                    "ticker": ticker, "weight": round(ticker_weight, 2),
+                    "classification": classification, "impact_stats": None,
+                    "decision": None, "tilt": 0.0,
+                    "confidence": 0.0, "reason": "blacklisted at last refit",
+                })
+                continue
+
+            stats = self.impact.lookup(category, ticker)
+            impact_snap = None
+            if stats:
+                impact_snap = {
+                    "count": stats.count,
+                    "avg_bps": round(stats.mean * 10000, 2),
+                    "hit_rate": round(stats.hit_rate * 100, 1),
+                    "std_bps": round(stats.std * 10000, 2),
+                }
+
+            tilt = _compute_tilt(category, ticker, tone, stats, ticker_weight)
+            tilts[ticker] = tilt
+
+            direction_label = "overweight" if tilt > 0 else "underweight" if tilt < 0 else None
+
+            self.last_decisions.append({
+                "event_id": tick.event_id, "headline": headline[:100],
+                "ticker": ticker, "weight": round(ticker_weight, 2),
+                "classification": classification, "impact_stats": impact_snap,
+                "decision": direction_label, "tilt": round(tilt, 6),
+                "confidence": round(abs(tilt) * 1000, 2),
+                "reason": f"tilt={tilt:+.4f}" if tilt != 0 else (
+                    "no impact data" if stats is None else
+                    f"insufficient obs ({stats.count}/3)" if stats.count < 3 else
+                    "neutral/mixed tone" if tone in ("neutral", "mixed") else "no edge"),
+            })
+
+        return tilts
 
     def record_exit(self, ticker: str, actual_return: float, exit_time: datetime) -> None:
         """Called by runner when position exits. Updates impact table."""
@@ -366,11 +530,20 @@ class SonnetEventStrategy:
                 break
 
     def refit(self, train_start: datetime, train_end: datetime, ctx: StrategyContext) -> None:
-        log.info("refit at %s: %d categories tracked", train_end.strftime("%Y-%m-%d"),
+        log.info("REFIT at %s: %d categories tracked", train_end.strftime("%Y-%m-%d"),
                  len(self.impact._stats))
+
+        self._blacklisted.clear()
+        for (cat, ticker), stats in self.impact._stats.items():
+            if stats.count >= 10 and stats.hit_rate < 0.45:
+                self._blacklisted.add((cat, ticker))
+                log.info("  BLACKLIST %s/%s: n=%d hit=%.0f%% avg=%.1fbps",
+                         cat, ticker, stats.count, stats.hit_rate * 100, stats.mean * 10000)
+
         summary = self.impact.summary()
         for key, s in list(summary.items())[:10]:
             log.info("  %s: n=%d avg=%.1fbps hit=%.0f%%", key, s["n"], s["avg_bps"], s["hit%"])
+        log.info("REFIT done: %d blacklisted", len(self._blacklisted))
 
     def _classify(self, headline: str, publish_time: datetime, surprise: float | None) -> dict | None:
         prompt = CLASSIFY_PROMPT.format(
