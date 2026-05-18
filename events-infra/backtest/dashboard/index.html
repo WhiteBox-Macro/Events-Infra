@@ -142,7 +142,7 @@ body { background:#0d1117; color:#c9d1d9; font-family:'Consolas','Monaco',monosp
 
 <script>
 const S = {
-  tickers:[], focused:'QQQ', ws:null,
+  tickers:[], focused:'SPY', ws:null,
   mainChart:null, mainSeries:null,
   barBuf:{}, markers:[], prices:{},
   mode:'discrete',
@@ -323,11 +323,13 @@ function onDecision(m) {
   let classHtml = '<span style="color:#484f58">not classified</span>';
   if (cl) {
     const tone = cl.tone||'neutral';
-    classHtml = cl.category+'/'+cl.sub_category
+    const evType = cl.event_type || 'unknown';
+    const outcome = cl.event_outcome ? '/' + cl.event_outcome : '';
+    classHtml = cl.category+'/'+evType+outcome
       +' <span class="evt-badge badge-'+tone+'">'+tone+'</span>'
       +(cl.is_regular?' <span class="evt-badge badge-regular">SCHED</span>':'')
       +(cl.surprise!=null?' <b style="color:#58a6ff">['+cl.surprise+']</b>':'')
-      +(!cl.from_cache?' <span style="color:#d29922">[uncached]</span>':'');
+      +(cl.sector?' <span style="color:#7ee787">·'+cl.sector+'</span>':'');
   }
 
   // Per-ticker impact rows sorted by LLM weight (highest first)

@@ -196,8 +196,8 @@ def build_classified_row(raw_row: dict, llm: dict, mechanical: dict,
         "related_event_id": None,
 
         # provenance
-        "classified_by": "sonnet-4.6/unified-v2",
-        "classifier_version": 2,
+        "classified_by": "sonnet-4.6/unified-v3-trader",
+        "classifier_version": 3,
         "raw_classification": json.dumps(llm),
         "metadata": json.dumps({}),
     }

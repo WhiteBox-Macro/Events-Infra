@@ -1,6 +1,8 @@
 # prompt.py
 
-**Purpose:** Unified single-event LLM classifier prompt. One Sonnet 4.6 call per event produces the full structured object (opinion + structural tags + impact weights + scheduled-release block). Replaces the prior Haiku-per-row + Sonnet-batched two-stage pipeline (deleted in this session).
+**Purpose:** Unified single-event LLM classifier prompt. One Sonnet 4.6 call per event produces the full structured object (opinion + structural tags + impact weights + scheduled-release block). Replaces the prior Haiku-per-row + Sonnet-batched two-stage pipeline.
+
+**Version:** v3-trader (2026-05-19). The v3 prompt frames the LLM as a sell-side analyst / trader and asks the central question "How does this event affect the affected company's (or index's) future revenue-generation ability?" Tone is now the directional read on future revenue, not literal sentiment. Includes 5 disambiguation rules, magnitude anchor (>5%/1-5%/<1%), and 8 worked examples with reasoning traces (Boeing strike, TSLA deliveries, FOMC hold, Trump tariff, McDonald's recall, NFP, NVDA partnership, intro post). New event_types: `labor_action`, `recall`, `operational_disruption` with their own event_outcome vocabularies (start/extend/reject/resolve, issue/expand/resolve). Bumped `classifier_version` 2 → 3. Re-classifies all 3602 events.
 
 ## Key Constants
 
@@ -21,7 +23,7 @@
 
 Single JSON object per call. Top-level keys:
 - Identity: `headline`, `text_content`
-- Taxonomy: `event_category` (14-label enum), `event_type` (30-label enum), `event_outcome` (sub-classification, nullable), `is_regular`
+- Taxonomy: `event_category` (14-label enum), `event_type` (**33**-label enum incl. v3-added `labor_action`/`recall`/`operational_disruption`), `event_outcome` (sub-classification, nullable; expanded vocabulary in v3), `is_regular`
 - Sentiment: `tone`, `magnitude`, `confidence`
 - Entities: `primary_ticker` (single, ANY ticker), `ticker_impacts` (list of `{ticker, weight, role}`, max 3, universe-only), `sector` (single nullable string)
 - Markets / geo: `impact_markets` (enum array), `countries`
