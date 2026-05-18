@@ -116,6 +116,13 @@ Each is its own follow-on session per the plan's "What's Deferred & Why" table.
 - **What:** Loud-fail is currently WARNING. For a 14-ticker rebalance event with a sector_spillover row on a catch-all category, that's 14 WARNING lines per event. Over 60 days × ~30 events/day, ~25k warnings per replay.
 - **Fix:** Downgrade to DEBUG with a one-time INFO on first occurrence per process. Use a module-level set to deduplicate (cat, ticker) keys.
 
+### L-6 · [M] VPS `.venv` missing numpy / pandas / pyarrow / websockets for full backtest
+
+- **Where:** `/opt/react-cloud/.venv` on react-cloud
+- **What:** As of 2026-05-18, only `psycopg2-binary` and `anthropic` are installed. Migration runner, preclassify, and parser-classifier work end-to-end (verified). But the full dashboard (timeline → parquet → strategy → portfolio_allocator → ReplayDriver) cannot run because none of the data-stack libs are present.
+- **Decision needed:** Do we want backtest replay on VPS at all? If yes, install `numpy pandas pyarrow websockets aiohttp`. If no, document VPS as classification-only and skip.
+- **Fix (if yes):** `ssh react-cloud "/opt/react-cloud/.venv/bin/pip install numpy pandas pyarrow websockets aiohttp"`
+
 ---
 
 ## How to drain this backlog
