@@ -1,26 +1,27 @@
-"""Sonnet Event Strategy — LLM tags events, algorithm trades from impact table.
+"""Sonnet Event Strategy — consumes unified-classifier output, trades from impact table.
+
+Post-2026-05-18 refactor: classification is done upstream by
+parser-classifier (single Sonnet call per event, columns populated in
+events.classified). This module READS that structured truth via EventTick
+and never calls an LLM itself.
 
 Architecture:
-  1. LLM ONLY classifies: event text → (category, sub_category, affected_tickers)
-  2. Impact table stores: category × ticker → historical return distribution
-  3. ALGORITHM decides: lookup category stats → threshold check → trade/no-trade
-  4. Direction and sizing are DETERMINISTIC from historical stats, never from LLM opinion
+  1. Upstream classifier writes the full structured object to PG.
+  2. TimelineMerger constructs EventTick from PG rows (with ticker_impacts
+     JSONB array, event_outcome, sector, etc.).
+  3. ALGORITHM decides: ImpactTable.lookup(category, ticker) -> threshold check
+     -> trade/no-trade. Direction and sizing are DETERMINISTIC from historical
+     stats + GateParams; never from any opinion this module computes.
 
-The LLM has no opinion on direction, magnitude, or whether to trade.
-It is a tagger, not a decision-maker.
+No cache, no live LLM, no two-prompt seam.
 """
 from __future__ import annotations
 
-import json
 import logging
-import os
-import re
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
-
-import anthropic
 
 import sys
 from pathlib import Path
@@ -46,29 +47,6 @@ MAX_CONCURRENT_POSITIONS = 3    # per strategy
 MIN_OBS_TO_TRADE = GLOBAL_DEFAULTS.min_obs
 MIN_HIT_RATE = GLOBAL_DEFAULTS.min_hit_rate
 MIN_AVG_RETURN_BPS = GLOBAL_DEFAULTS.min_avg_bps
-
-# ── LLM prompt — classification ONLY, no direction/opinion ──────────────
-CLASSIFY_PROMPT = """\
-You are a financial event tagger. Given a news headline, assign it a category.
-
-Headline: {headline}
-Published: {publish_time}
-Surprise value: {surprise}
-
-Output a JSON object with ONLY these fields:
-{{
-  "event_category": string,     // Broad category. Use CONSISTENT labels:
-                                // "fed_policy", "earnings_data", "trade_policy", "geopolitical",
-                                // "corporate_action", "economic_data", "regulatory", "energy_commodity",
-                                // "tech_sector", "labor_market", "fiscal_policy", "other"
-  "sub_category": string,       // Specific: "rate_decision", "cpi_release", "tariff_escalation", etc.
-  "affected_tickers": string[]  // Which of [{tickers}] are likely relevant. Can be empty.
-}}
-
-Rules:
-- You are ONLY tagging. Do NOT predict direction, sentiment, or market impact.
-- Use CONSISTENT labels so the same type of event always gets the same category.
-- Return ONLY the JSON object."""
 
 
 # ── Impact table: historical event→price reaction stats ─────────────────
@@ -273,32 +251,39 @@ def decide_trade(stats: Optional[_CatStats], tone: str,
 
 # ── Strategy engine ─────────────────────────────────────────────────────
 
-CACHE_PATH = Path(__file__).resolve().parent.parent / "events_classified_cache.json"
-
 
 class SonnetEventStrategy:
-    """LLM tags events (from cache), algorithm trades from historical impact table."""
+    """Strategy consumer of the unified classifier output.
+
+    Post-2026-05-18 refactor: classification lives entirely in events.classified
+    (single Sonnet call per event, columns populated by parser-classifier).
+    The strategy reads structured fields off EventTick — no JSON cache, no
+    live-LLM fallback, no two-truth seam.
+    """
 
     name = "sonnet_event"
 
-    def __init__(self, tickers: list[str], model: str = "claude-sonnet-4-6",
-                 cache_only: bool = False,
-                 gate_registry: GateParamsRegistry | None = None):
+    def __init__(self, tickers: list[str],
+                 gate_registry: GateParamsRegistry | None = None,
+                 # Legacy kwargs kept for caller compatibility; ignored.
+                 model: str | None = None,
+                 cache_only: bool = False):
         self.tickers = tickers
-        self.model = model
-        self.cache_only = cache_only
-        self._client: anthropic.Anthropic | None = None
+        # Universe set for fast "is this ticker tradable here?" checks.
+        self._universe: set[str] = set(tickers)
         self.impact = ImpactTable()
         self.classification_log: list[dict] = []
         self._last_bar: dict[str, BarTick] = {}
-        self._cache: dict[str, dict] = self._load_cache()
         self.last_decisions: list[dict] = []
         self._blacklisted: set[tuple[str, str]] = set()
-        # Optional. If None, all lookups return GLOBAL_DEFAULTS — behavior
-        # identical to pre-refactor.
         self.gate_registry = gate_registry
-
         self._pending: list[dict] = []
+        # Compatibility shim — replay_driver / dashboard logged len(strategy._cache).
+        # No cache exists post-refactor; expose an empty dict so existing callers
+        # don't crash. A follow-up cleans up the call sites.
+        self._cache: dict = {}
+        if model is not None or cache_only:
+            log.debug("model/cache_only kwargs are deprecated (ignored)")
 
     def _params_for(self, category: str, ticker: str) -> GateParams:
         if self.gate_registry is None:
@@ -318,24 +303,6 @@ class SonnetEventStrategy:
         self.last_decisions.clear()
         self._blacklisted.clear()
         self._pending.clear()
-
-    def _load_cache(self) -> dict:
-        if CACHE_PATH.exists():
-            try:
-                with open(CACHE_PATH, encoding="utf-8") as f:
-                    return json.load(f)
-            except (json.JSONDecodeError, OSError):
-                pass
-        return {}
-
-    @property
-    def client(self) -> anthropic.Anthropic:
-        if self._client is None:
-            self._client = anthropic.Anthropic(
-                base_url=os.environ.get("CLASSIFIER_LLM_BASE_URL", "http://192.168.1.10:9210"),
-                api_key=os.environ.get("CLASSIFIER_LLM_API_KEY", "event_classifier"),
-            )
-        return self._client
 
     def on_bar(self, tick: BarTick, ctx: StrategyContext) -> list[Order]:
         self._last_bar[tick.ticker] = tick
@@ -369,78 +336,64 @@ class SonnetEventStrategy:
         return []
 
     def on_event(self, tick: EventTick, ctx: StrategyContext) -> list[Order]:
+        """Discrete-mode decision: structured fields are already on the tick
+        (populated by TimelineMerger from events.classified). No cache lookup,
+        no live-LLM fallback — the classifier already ran upstream."""
         self.last_decisions = []
         headline = tick.headline or ""
         if not headline.strip():
             return []
 
-        cached = self._cache.get(str(tick.event_id))
-        from_cache = cached is not None
-        if cached:
-            tag = cached
-        elif self.cache_only:
-            tag = {
-                "event_category": tick.event_type,
-                "sub_category": tick.event_type,
-                "ticker_impact_weights": {t: 0.5 for t in self.tickers},
-            }
-            from_cache = False
-        else:
-            tag = self._classify(headline, tick.publish_time, tick.surprise)
-            if tag:
-                self._cache[str(tick.event_id)] = tag
-
-        if not tag:
-            return []
-
-        category = tag.get("event_category", "other")
-        sub_cat = tag.get("sub_category", "")
-        weights = tag.get("ticker_impact_weights") or {}
-        affected = list(weights.keys()) if weights else (tag.get("affected_tickers") or [])
-        sector_impact = tag.get("sector_impact") or []
+        category = tick.event_category or "other"
+        tone = tick.tone
+        # ticker_impacts: [{ticker, weight, role}, ...] (max 3, universe-clamped by classify.py)
+        impacts = tick.ticker_impacts or []
+        affected = [e["ticker"] for e in impacts]
 
         self.classification_log.append({
             "event_id": tick.event_id,
             "time": tick.publish_time.isoformat(),
             "headline": headline[:100],
             "category": category,
-            "sub_category": sub_cat,
+            "event_type": tick.event_type,
+            "event_outcome": tick.event_outcome,
             "affected": affected,
-            "weights": weights,
+            "impacts": impacts,
         })
 
-        tone = tick.inferred_tone
-
-        for ticker in affected:
-            if ticker in self.tickers:
-                last_bar = self._last_bar.get(ticker)
-                self._pending.append({
-                    "category": category,
-                    "sub_category": sub_cat,
-                    "tone": tone,
-                    "ticker": ticker,
-                    "event_time": tick.publish_time,
-                    "entry_close": last_bar.close if last_bar else None,
-                    "bars_elapsed": 0,
-                })
+        # Schedule pending observations to learn from this event's outcome
+        for entry in impacts:
+            ticker = entry["ticker"]
+            last_bar = self._last_bar.get(ticker)
+            self._pending.append({
+                "category": category,
+                "event_type": tick.event_type,
+                "tone": tone,
+                "ticker": ticker,
+                "event_time": tick.publish_time,
+                "entry_close": last_bar.close if last_bar else None,
+                "bars_elapsed": 0,
+            })
 
         orders = []
         open_positions = ctx.positions(self.name)
         at_capacity = len(open_positions) >= MAX_CONCURRENT_POSITIONS
 
-        for ticker in affected:
-            if ticker not in self.tickers:
-                continue
+        for entry in impacts:
+            ticker = entry["ticker"]
+            ticker_weight = float(entry.get("weight", 0.5))
+            role = entry.get("role", "unknown")
 
-            ticker_weight = float(weights.get(ticker, 0.5))
             classification = {
                 "category": category,
-                "sub_category": sub_cat,
+                "event_type": tick.event_type,
+                "event_outcome": tick.event_outcome,
                 "tone": tone,
+                "magnitude": tick.magnitude,
                 "is_regular": tick.is_regular,
                 "surprise": float(tick.surprise) if tick.surprise is not None else None,
-                "from_cache": from_cache,
-                "sector_impact": sector_impact,
+                "sector": tick.sector,
+                "role": role,
             }
 
             if (category, ticker) in self._blacklisted or self._is_retired(category, ticker):
@@ -496,17 +449,18 @@ class SonnetEventStrategy:
                 continue
 
             scaled_size = POSITION_SIZE_PCT * ticker_weight
+            event_type = tick.event_type
             orders.append(Order(
                 strategy=self.name,
                 ticker=ticker,
                 side=side,
                 qty_pct=scaled_size,
-                reason=f"{category}/{tone}/{sub_cat}",
+                reason=f"{category}/{tone}/{event_type}",
                 submitted_at=tick.publish_time,
                 metadata={
                     "event_id": tick.event_id,
                     "category": category,
-                    "sub_category": sub_cat,
+                    "event_type": event_type,
                     "tone": tone,
                     "impact_n": stats.count if stats else 0,
                     "impact_avg_bps": round(stats.mean * 10000, 2) if stats else 0,
@@ -518,7 +472,8 @@ class SonnetEventStrategy:
         return orders
 
     def compute_tilts(self, tick: EventTick, ctx: StrategyContext) -> dict[str, float]:
-        """Compute per-ticker weight tilts for rebalance mode."""
+        """Rebalance-mode counterpart of on_event — reads structured fields
+        directly off the tick (no cache, no live LLM)."""
         from portfolio_allocator import compute_tilt as _compute_tilt
 
         self.last_decisions = []
@@ -526,54 +481,35 @@ class SonnetEventStrategy:
         if not headline.strip():
             return {}
 
-        cached = self._cache.get(str(tick.event_id))
-        from_cache = cached is not None
-        if cached:
-            tag = cached
-        elif self.cache_only:
-            tag = {
-                "event_category": tick.event_type,
-                "sub_category": tick.event_type,
-                "ticker_impact_weights": {t: 0.5 for t in self.tickers},
-            }
-            from_cache = False
-        else:
-            tag = self._classify(headline, tick.publish_time, tick.surprise)
-            if tag:
-                self._cache[str(tick.event_id)] = tag
-
-        if not tag:
+        category = tick.event_category or "other"
+        tone = tick.tone
+        impacts = tick.ticker_impacts or []
+        if not impacts:
             return {}
 
-        category = tag.get("event_category", "other")
-        sub_cat = tag.get("sub_category", "")
-        weights = tag.get("ticker_impact_weights") or {}
-        affected = list(weights.keys()) if weights else (tag.get("affected_tickers") or [])
-        sector_impact = tag.get("sector_impact") or []
-        tone = tick.inferred_tone
-
-        for ticker in affected:
-            if ticker in self.tickers:
-                last_bar = self._last_bar.get(ticker)
-                self._pending.append({
-                    "category": category, "sub_category": sub_cat,
-                    "tone": tone, "ticker": ticker,
-                    "event_time": tick.publish_time,
-                    "entry_close": last_bar.close if last_bar else None,
-                    "bars_elapsed": 0,
-                })
+        for entry in impacts:
+            ticker = entry["ticker"]
+            last_bar = self._last_bar.get(ticker)
+            self._pending.append({
+                "category": category, "event_type": tick.event_type,
+                "tone": tone, "ticker": ticker,
+                "event_time": tick.publish_time,
+                "entry_close": last_bar.close if last_bar else None,
+                "bars_elapsed": 0,
+            })
 
         tilts = {}
-        for ticker in affected:
-            if ticker not in self.tickers:
-                continue
-
-            ticker_weight = float(weights.get(ticker, 0.5))
+        for entry in impacts:
+            ticker = entry["ticker"]
+            ticker_weight = float(entry.get("weight", 0.5))
+            role = entry.get("role", "unknown")
             classification = {
-                "category": category, "sub_category": sub_cat,
-                "tone": tone, "is_regular": tick.is_regular,
+                "category": category, "event_type": tick.event_type,
+                "event_outcome": tick.event_outcome,
+                "tone": tone, "magnitude": tick.magnitude,
+                "is_regular": tick.is_regular,
                 "surprise": float(tick.surprise) if tick.surprise is not None else None,
-                "from_cache": from_cache, "sector_impact": sector_impact,
+                "sector": tick.sector, "role": role,
             }
 
             if (category, ticker) in self._blacklisted or self._is_retired(category, ticker):
@@ -660,29 +596,3 @@ class SonnetEventStrategy:
             log.info("  %s: n=%d avg=%.1fbps hit=%.0f%%", key, s["n"], s["avg_bps"], s["hit%"])
         log.info("REFIT done: %d blacklisted", len(self._blacklisted))
 
-    def _classify(self, headline: str, publish_time: datetime, surprise: float | None) -> dict | None:
-        prompt = CLASSIFY_PROMPT.format(
-            tickers=", ".join(self.tickers),
-            headline=headline,
-            publish_time=publish_time.strftime("%Y-%m-%d %H:%M UTC"),
-            surprise=surprise if surprise is not None else "N/A",
-        )
-        try:
-            resp = self.client.messages.create(
-                model=self.model, max_tokens=200,
-                messages=[{"role": "user", "content": prompt}],
-            )
-        except Exception as e:
-            log.warning("classify failed: %s", e)
-            return None
-
-        raw = resp.content[0].text if resp.content else ""
-        cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip())
-        cleaned = re.sub(r"\s*```$", "", cleaned).strip()
-        try:
-            result = json.loads(cleaned)
-            if isinstance(result, dict) and "event_category" in result:
-                return result
-        except json.JSONDecodeError:
-            pass
-        return None

@@ -16,9 +16,16 @@ from dbkit.constants import load_dotenv_files  # noqa: E402
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Classify raw events into events.classified")
+    from prompt import DEFAULT_TARGET_TICKERS  # noqa: E402
+
+    parser = argparse.ArgumentParser(description="Classify raw events into events.classified (unified Sonnet path)")
     parser.add_argument("--workers", type=int, default=6, help="Number of parallel workers (default: 6)")
     parser.add_argument("--retry-failed", action="store_true", help="Reset failed/stuck rows to pending")
+    parser.add_argument("--tickers", nargs="+", default=DEFAULT_TARGET_TICKERS,
+                        help="Target ticker universe for ticker_impacts (max 3 per event). "
+                             "Default: 15-ticker strategy universe.")
+    parser.add_argument("--model", default=os.environ.get("CLASSIFIER_MODEL", "claude-sonnet-4-6"),
+                        help="Anthropic model id (default: claude-sonnet-4-6 or $CLASSIFIER_MODEL)")
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -33,7 +40,12 @@ def main() -> int:
 
     from classify import run_parallel  # noqa: E402
 
-    stats = run_parallel(num_workers=args.workers, retry_failed=args.retry_failed)
+    stats = run_parallel(
+        num_workers=args.workers,
+        retry_failed=args.retry_failed,
+        target_tickers=args.tickers,
+        model=args.model,
+    )
     print(f"\nDone: {stats}")
     return 0
 

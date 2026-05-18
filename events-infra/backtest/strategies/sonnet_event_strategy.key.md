@@ -27,7 +27,9 @@
 - **`ImpactTable.lookup_with_fallback(category, ticker, primary_sector=None)`** — B3 cold-start chain (specific → sector → BROAD → "surprise_default"). Returns `(stats_or_None, fallback_level)`. **Opt-in: no internal caller flips it this session.**
 - **`on_bar(tick, ctx)`** — tracks last bar prices, processes pending observations (records actual returns after HOLDING_BARS=15 bars)
 - **`on_event(tick, ctx)`** — classifies event (cache-first), looks up impact stats, **fetches per-(cat, ticker) GateParams via `self._params_for(...)`**, decides trade, emits orders. Honors retired status from `signals.gate_params`. Populates `last_decisions` for dashboard visibility.
-- **`compute_tilts(tick, ctx)`** — rebalance-mode counterpart of `on_event`. Honors retired-status blacklist AND per-(cat,ticker) GateParams: `params.tilt_unit`, `params.side_rule`, `params.min_obs`, `params.min_hit_rate` are all routed through `portfolio_allocator.compute_tilt(..., params=..., surprise=...)`. Same dispatch rules as `decide_trade`.
+- **`compute_tilts(tick, ctx)`** — rebalance-mode counterpart of `on_event`. Reads `tick.ticker_impacts` (list of `{ticker, weight, role}`) directly. Honors retired-status blacklist AND per-(cat,ticker) GateParams: `params.tilt_unit`, `params.side_rule`, `params.min_obs`, `params.min_hit_rate` are all routed through `portfolio_allocator.compute_tilt(..., params=..., surprise=...)`. Same dispatch rules as `decide_trade`.
+
+**No cache, no LLM calls in this module.** Post-2026-05-18 unified-classification refactor: events.classified is the single source of truth, populated upstream by parser-classifier. The strategy consumes `EventTick` fields (`event_category`, `event_type`, `event_outcome`, `tone`, `magnitude`, `confidence`, `primary_ticker`, `ticker_impacts`, `sector`, ...) constructed by `TimelineMerger._make_event_tick` from PG.
 - **`refit(train_start, train_end, ctx)`** — blacklists categories with n>=10 and hit_rate<0.45; also calls `self.gate_registry.reload()` so newly-promoted agent gates take effect.
 - **`record_exit(ticker, actual_return, exit_time)`** — called by runner on position exit, updates impact table
 
@@ -53,7 +55,7 @@
 
 ## Gotchas
 
-- `cache_only=True` mode skips live LLM calls entirely; uncached events fall back to `event_type` as category with equal-weight tickers
+- `cache_only` + `model` constructor kwargs are now NO-OPs (deprecated since 2026-05-18 unified refactor). Strategy never calls an LLM directly. `self._cache` is an empty dict kept only so legacy callers' `len(strategy._cache)` log lines don't crash.
 - Tone adjustment means bearish events have their return signs flipped before stats accumulation
 - Pending observations track bars_elapsed per-ticker, so multi-ticker events create independent observation streams
 - `params.holding_bars` is read from GateParams but the **runner enforces HOLDING_BARS=15 globally** today. Per-(cat, ticker) holding_bars is wired through `decide_trade` but does not yet override the runner's scheduled-exit countdown — full plumbing is deferred to a follow-on session.

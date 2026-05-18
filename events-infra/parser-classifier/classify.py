@@ -22,13 +22,18 @@ from dbkit import pg  # noqa: E402
 from dbkit.constants import DB_BASE  # noqa: E402
 
 from extract import extract_mechanical, find_discrepancies  # noqa: E402
-from prompt import classify_tweet, reclassify_with_discrepancy  # noqa: E402
+from prompt import (classify_tweet, reclassify_with_discrepancy,  # noqa: E402
+                    DEFAULT_TARGET_TICKERS, ALLOWED_IMPACT_MARKETS,
+                    ALLOWED_ROLES, MAX_TICKER_IMPACTS)
 
 log = logging.getLogger("classifier")
 
 RAW_ROOT = DB_BASE / "events" / "raw"
 
 LLM_TIMEOUT_SEC = 60
+
+# Default model for the unified Sonnet path. Override via env or CLI.
+DEFAULT_MODEL = os.environ.get("CLASSIFIER_MODEL", "claude-sonnet-4-6")
 
 
 class Stats:
@@ -96,36 +101,105 @@ def _pg_array(lst: list | None) -> str:
     return "{" + ",".join(f'"{e}"' for e in escaped) + "}"
 
 
-def build_classified_row(raw_row: dict, llm: dict, mechanical: dict) -> dict:
+def _clamp_ticker_impacts(impacts: list, target_tickers: list[str]) -> list[dict]:
+    """Enforce contract: max 3, only universe tickers, valid role enum, 0<=weight<=1.
+
+    The prompt is advisory; this helper is the authoritative boundary.
+    Order preserved (LLM's ranking matters).
+    """
+    if not isinstance(impacts, list):
+        return []
+    universe = set(target_tickers)
+    out = []
+    for entry in impacts:
+        if not isinstance(entry, dict):
+            continue
+        ticker = entry.get("ticker")
+        weight = entry.get("weight")
+        role = entry.get("role")
+        if ticker not in universe:
+            continue
+        if role not in ALLOWED_ROLES:
+            continue
+        try:
+            w = float(weight)
+        except (TypeError, ValueError):
+            continue
+        w = max(0.0, min(1.0, w))
+        out.append({"ticker": ticker, "weight": round(w, 4), "role": role})
+        if len(out) >= MAX_TICKER_IMPACTS:
+            break
+    return out
+
+
+def _filter_markets(markets) -> list[str]:
+    """Restrict to the 8-value controlled enum. Drop anything else silently."""
+    if not isinstance(markets, list):
+        return []
+    return [m for m in markets if isinstance(m, str) and m in ALLOWED_IMPACT_MARKETS]
+
+
+def build_classified_row(raw_row: dict, llm: dict, mechanical: dict,
+                          target_tickers: list[str]) -> dict:
+    """Map the unified LLM output to the events.classified row dict.
+
+    Post-migration 008, the table has the new ticker_impacts JSONB + sector +
+    event_outcome + classifier_version + raw_classification columns alongside
+    the legacy ones (which migration 009 will rename/drop).
+
+    This row populates BOTH the new and the legacy columns — the legacy ones
+    keep downstream consumers working during the migration window.
+    """
+    is_regular = bool(llm.get("is_regular", False))
+    impacts = _clamp_ticker_impacts(llm.get("ticker_impacts", []), target_tickers)
+    markets = _filter_markets(llm.get("impact_markets", []))
+    countries = llm.get("countries") if isinstance(llm.get("countries"), list) else []
+    sector = llm.get("sector") if isinstance(llm.get("sector"), str) else None
+
     return {
         "raw_id": raw_row["raw_id"],
         "source_channel": raw_row["source_channel"],
         "publish_time": mechanical["publish_time"] or raw_row.get("published_at") or datetime.now(timezone.utc),
         "headline": llm.get("headline") or mechanical.get("headline"),
         "text_content": llm.get("text_content"),
-        "is_regular": bool(llm.get("is_regular", False)),
+
+        # event taxonomy
+        "event_category": llm.get("event_category", "other"),
         "event_type": llm.get("event_type", "other"),
-        "inferred_tone": llm.get("tone", "neutral"),
-        "inferred_magnitude": llm.get("magnitude", "minor"),
-        "inferred_impact_markets": _pg_array(llm.get("impact_markets")),
-        "tickers": _pg_array(llm.get("tickers") or mechanical.get("tickers")),
+        "event_outcome": llm.get("event_outcome"),
+        "is_regular": is_regular,
+
+        # opinion — post-009 names
+        "tone": llm.get("tone", "neutral"),
+        "magnitude": llm.get("magnitude", "minor"),
+        "confidence": llm.get("confidence", 0.5),
+
+        # affected entities — unified shape
         "primary_ticker": llm.get("primary_ticker") or mechanical.get("primary_ticker"),
-        "sectors": _pg_array(llm.get("sectors")),
-        "primary_sector": llm.get("primary_sector"),
-        "countries": _pg_array(llm.get("countries")),
-        "indicator_name": llm.get("indicator_name") if llm.get("is_regular") else None,
+        "ticker_impacts": json.dumps(impacts),
+        "sector": sector,
+        "impact_markets": _pg_array(markets),
+        "countries": _pg_array(countries),
+
+        # scheduled block (only if is_regular)
+        "indicator_name": llm.get("indicator_name") if is_regular else None,
         "scheduled_time": None,
-        "consensus_value": llm.get("consensus_value") if llm.get("is_regular") else None,
-        "actual_value": llm.get("actual_value") if llm.get("is_regular") else None,
-        "surprise": llm.get("surprise") if llm.get("is_regular") else None,
+        "consensus_value": llm.get("consensus_value") if is_regular else None,
+        "actual_value": llm.get("actual_value") if is_regular else None,
+        "surprise": llm.get("surprise") if is_regular else None,
         "surprise_z": None,
-        "reporting_period": llm.get("reporting_period") if llm.get("is_regular") else None,
+        "reporting_period": llm.get("reporting_period") if is_regular else None,
+
+        # dedup chains (filled by downstream)
         "dedup_cluster_id": None,
         "cluster_sequence": None,
         "related_event_id": None,
-        "classified_by": "haiku-4.5/event_classifier/v1",
-        "classification_confidence": llm.get("confidence", 0.5),
-        "metadata": json.dumps({"cross_check": "pass", "reclassified": False}),
+
+        # provenance
+        "classified_by": "sonnet-4.6/unified-v2",
+        "classifier_version": 2,
+        "raw_classification": json.dumps(llm),
+        "metadata": json.dumps({}),
     }
 
 
@@ -144,7 +218,8 @@ def mark_status(raw_id, status: str, error: str | None = None) -> None:
         )
 
 
-def classify_one(raw_row: dict, stats: Stats) -> None:
+def classify_one(raw_row: dict, stats: Stats, target_tickers: list[str],
+                  model: str = DEFAULT_MODEL) -> None:
     """Classify a single claimed row. Updates stats."""
     ext_id = raw_row["external_id"]
 
@@ -164,7 +239,7 @@ def classify_one(raw_row: dict, stats: Stats) -> None:
     mechanical = extract_mechanical(payload)
     pub_str = mechanical["publish_time"].isoformat() if mechanical["publish_time"] else ""
 
-    llm_result = classify_tweet(text, pub_str)
+    llm_result = classify_tweet(text, pub_str, target_tickers=target_tickers, model=model)
     if not llm_result:
         mark_status(raw_row["raw_id"], "failed", error="LLM invalid response")
         stats.inc("failed")
@@ -173,13 +248,16 @@ def classify_one(raw_row: dict, stats: Stats) -> None:
     discrepancies = find_discrepancies(llm_result, mechanical)
     if discrepancies:
         log.debug("discrepancies for %s: %s", ext_id, discrepancies)
-        llm_result_2 = reclassify_with_discrepancy(text, pub_str, llm_result, mechanical, discrepancies)
+        llm_result_2 = reclassify_with_discrepancy(
+            text, pub_str, llm_result, mechanical, discrepancies,
+            target_tickers=target_tickers, model=model,
+        )
         if llm_result_2:
             llm_result = llm_result_2
         stats.inc("reclassified")
 
     llm_result["text_content"] = text
-    row = build_classified_row(raw_row, llm_result, mechanical)
+    row = build_classified_row(raw_row, llm_result, mechanical, target_tickers)
 
     if discrepancies:
         meta = json.loads(row["metadata"])
@@ -198,7 +276,8 @@ def classify_one(raw_row: dict, stats: Stats) -> None:
         stats.inc("failed")
 
 
-def worker_loop(worker_id: int, stats: Stats, stop: threading.Event) -> None:
+def worker_loop(worker_id: int, stats: Stats, stop: threading.Event,
+                 target_tickers: list[str], model: str = DEFAULT_MODEL) -> None:
     """Single worker: claim rows and classify until none left or stopped."""
     wlog = logging.getLogger(f"worker-{worker_id}")
     wlog.info("started")
@@ -216,7 +295,7 @@ def worker_loop(worker_id: int, stats: Stats, stop: threading.Event) -> None:
 
         idle_count = 0
         try:
-            classify_one(row, stats)
+            classify_one(row, stats, target_tickers, model=model)
         except Exception:
             wlog.exception("unhandled error for %s", row.get("external_id"))
             mark_status(row["raw_id"], "failed", error="unhandled exception")
@@ -225,7 +304,10 @@ def worker_loop(worker_id: int, stats: Stats, stop: threading.Event) -> None:
     wlog.info("stopped (%s)", stats.summary())
 
 
-def run_parallel(num_workers: int = 6, *, retry_failed: bool = False) -> dict:
+def run_parallel(num_workers: int = 6, *, retry_failed: bool = False,
+                  target_tickers: list[str] | None = None,
+                  model: str = DEFAULT_MODEL) -> dict:
+    tickers = target_tickers or DEFAULT_TARGET_TICKERS
     if retry_failed:
         count = pg.execute(
             "UPDATE events.raw SET classify_status='pending' "
@@ -239,13 +321,15 @@ def run_parallel(num_workers: int = 6, *, retry_failed: bool = False) -> dict:
         "WHERE source_channel='twitter_twitterapiio' AND classify_status='pending'"
     )
     pending = remaining[0]["n"] if remaining else 0
-    log.info("starting %d workers, %d rows pending", num_workers, pending)
+    log.info("starting %d workers, %d rows pending, model=%s, universe=%d tickers",
+             num_workers, pending, model, len(tickers))
 
     stats = Stats()
     stop = threading.Event()
 
     with ThreadPoolExecutor(max_workers=num_workers, thread_name_prefix="clf") as pool:
-        futures = [pool.submit(worker_loop, i, stats, stop) for i in range(num_workers)]
+        futures = [pool.submit(worker_loop, i, stats, stop, tickers, model)
+                   for i in range(num_workers)]
 
         try:
             while not all(f.done() for f in futures):
@@ -265,4 +349,6 @@ def run_parallel(num_workers: int = 6, *, retry_failed: bool = False) -> dict:
         "reclassified": stats.reclassified,
         "elapsed_sec": round(stats.elapsed, 1),
         "rate_per_sec": round(stats.rate, 2),
+        "model": model,
+        "universe_size": len(tickers),
     }

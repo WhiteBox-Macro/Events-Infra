@@ -38,20 +38,38 @@ def extract_mechanical(payload: dict) -> dict:
 
 
 def find_discrepancies(llm_result: dict, mechanical: dict) -> list[str]:
-    """Compare LLM output with mechanical extraction. Return list of discrepancy descriptions."""
+    """Compare LLM output with mechanical extraction.
+
+    Post-unified-prompt (2026-05-18): the LLM emits `primary_ticker` (objective
+    truth, any ticker) + `ticker_impacts[].ticker` (universe-constrained).
+    Mechanical extraction pulls all cashtags from the raw text.
+
+    Only flag GENUINE issues:
+      1. primary_ticker is set but doesn't appear in cashtags or headline
+         (likely LLM hallucination).
+      2. A mechanically-extracted ticker IS in the target universe but missing
+         from BOTH primary_ticker and ticker_impacts (LLM missed a relevant
+         signal). We can't tell universe membership here, so defer: only flag
+         if primary_ticker is empty AND mech tickers exist (the LLM ignored
+         what was clearly a company-specific event).
+    """
     issues = []
 
     mech_tickers = set(mechanical.get("tickers") or [])
-    llm_tickers = set(llm_result.get("tickers") or [])
+    primary = llm_result.get("primary_ticker")
+    impacts = llm_result.get("ticker_impacts") or []
+    impact_tickers = {e.get("ticker") for e in impacts
+                       if isinstance(e, dict) and e.get("ticker")}
+    llm_tickers = ({primary} if primary else set()) | impact_tickers
 
-    missing_from_llm = mech_tickers - llm_tickers
-    if missing_from_llm:
-        issues.append(f"LLM missed tickers found in entities: {sorted(missing_from_llm)}")
+    headline = (llm_result.get("headline") or "") + " " + (mechanical.get("headline") or "")
 
-    extra_in_llm = llm_tickers - mech_tickers
-    if extra_in_llm:
-        for t in extra_in_llm:
-            if t not in (mechanical.get("headline") or "") and t not in (llm_result.get("headline") or ""):
-                issues.append(f"LLM added ticker {t} not found in text or entities — verify")
+    # Hallucination: primary_ticker not in cashtags AND not in headline text
+    if primary and mech_tickers and primary not in mech_tickers and primary not in headline:
+        issues.append(f"LLM primary_ticker={primary} not in cashtags {sorted(mech_tickers)} or headline")
+
+    # Ignored company event: mech extracted cashtags but LLM emitted nothing
+    if mech_tickers and not llm_tickers:
+        issues.append(f"LLM emitted no tickers despite cashtags {sorted(mech_tickers)} in text")
 
     return issues

@@ -20,17 +20,41 @@ class BarTick:
 
 @dataclass(frozen=True, slots=True)
 class EventTick:
+    """Unified event shape consumed by strategies.
+
+    Mirrors the post-migration-008 events.classified columns; _make_event_tick
+    tolerates both the old (inferred_tone) and new (tone) column names so
+    transitions across migration 009 don't break the timeline reader.
+    """
     event_id: str
     publish_time: datetime
-    event_type: str
+
+    # Taxonomy
+    event_category: str           # 14-label broad bucket (ImpactTable key)
+    event_type: str               # 30-label fine type
+    event_outcome: str | None     # beat|miss|hike|cut|... or None
     is_regular: bool
+
+    # Content
     headline: str | None
-    inferred_tone: str
-    inferred_magnitude: str
-    tickers: list
-    primary_ticker: str | None
-    surprise: float | None
+
+    # Opinion (renamed from inferred_*)
+    tone: str
+    magnitude: str
+    confidence: float
+
+    # Affected entities (unified structure)
+    primary_ticker: str | None    # objective truth, any ticker (in or out of universe)
+    ticker_impacts: list          # [{"ticker":"NVDA","weight":1.0,"role":"primary"}, ...] max 3
+    sector: str | None            # single dominant sector or None
+
+    # Scheduled-release block (only meaningful when is_regular)
     indicator_name: str | None
+    consensus_value: float | None
+    actual_value: float | None
+    surprise: float | None
+    reporting_period: str | None
+
     metadata: dict
 
 

@@ -50,11 +50,38 @@ def _load_parquet_bars(ticker: str, parquet_dir: Path) -> tuple[pd.DataFrame, np
 
 
 def _load_events() -> list[dict]:
+    """Load classified events from PG.
+
+    Tolerant to pre-migration-009 state where columns still have the
+    inferred_ prefix: tries the post-009 query first, falls back to the
+    legacy one. This single function bridges both schemas during the
+    migration window.
+    """
     from dbkit import pg  # noqa: E402
+
+    try:
+        return pg.execute(
+            "SELECT event_id, publish_time, "
+            "  event_category, event_type, event_outcome, is_regular, headline, "
+            "  tone, magnitude, confidence, "
+            "  primary_ticker, ticker_impacts, sector, "
+            "  indicator_name, consensus_value, actual_value, surprise, reporting_period, "
+            "  metadata "
+            "FROM events.classified "
+            "ORDER BY publish_time ASC"
+        )
+    except Exception as e:
+        log.info("post-009 query failed (%s); using legacy column names", str(e)[:80])
+
     rows = pg.execute(
-        "SELECT event_id, publish_time, event_type, is_regular, headline, "
-        "inferred_tone, inferred_magnitude, tickers, primary_ticker, "
-        "indicator_name, surprise, metadata "
+        "SELECT event_id, publish_time, "
+        "  event_category, event_type, event_outcome, is_regular, headline, "
+        "  inferred_tone        AS tone, "
+        "  inferred_magnitude   AS magnitude, "
+        "  classification_confidence AS confidence, "
+        "  primary_ticker, ticker_impacts, sector, "
+        "  indicator_name, consensus_value, actual_value, surprise, reporting_period, "
+        "  metadata "
         "FROM events.classified "
         "ORDER BY publish_time ASC"
     )
@@ -133,18 +160,39 @@ class TimelineMerger:
         ts = ev["publish_time"]
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=timezone.utc)
+
+        # ticker_impacts from PG JSONB column is already a list[dict] when
+        # using RealDictCursor's default JSONB adapter. Defensive: tolerate
+        # str (some psycopg2 configs return raw JSON text) and None.
+        ti = ev.get("ticker_impacts")
+        if isinstance(ti, str):
+            import json as _json
+            try:
+                ti = _json.loads(ti)
+            except _json.JSONDecodeError:
+                ti = []
+        if not isinstance(ti, list):
+            ti = []
+
         return EventTick(
             event_id=str(ev["event_id"]),
             publish_time=ts,
-            event_type=ev["event_type"],
-            is_regular=bool(ev["is_regular"]),
+            event_category=ev.get("event_category") or "other",
+            event_type=ev.get("event_type") or "other",
+            event_outcome=ev.get("event_outcome"),
+            is_regular=bool(ev.get("is_regular")),
             headline=ev.get("headline"),
-            inferred_tone=ev.get("inferred_tone", "neutral"),
-            inferred_magnitude=ev.get("inferred_magnitude", "minor"),
-            tickers=ev.get("tickers") or [],
+            tone=ev.get("tone") or "neutral",
+            magnitude=ev.get("magnitude") or "minor",
+            confidence=float(ev.get("confidence") or 0.5),
             primary_ticker=ev.get("primary_ticker"),
-            surprise=ev.get("surprise"),
+            ticker_impacts=ti,
+            sector=ev.get("sector"),
             indicator_name=ev.get("indicator_name"),
+            consensus_value=ev.get("consensus_value"),
+            actual_value=ev.get("actual_value"),
+            surprise=ev.get("surprise"),
+            reporting_period=ev.get("reporting_period"),
             metadata=ev.get("metadata") or {},
         )
 

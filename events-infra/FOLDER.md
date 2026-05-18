@@ -10,17 +10,19 @@ Raw messages exactly as received. Append-only JSON on disk at `$DB_BASE/events/r
 ### 2. Parser-Classifier → `events.classified`
 Single flat table. One row per classified event. Parser-classifier reads raw JSON, extracts text, classifies event type / tone / magnitude / markets / tickers, writes one structured row. Downstream modeling/backtest agents append their own columns later.
 
-## `events.classified` column groups
+## `events.classified` column groups (post-migration-009 unified shape)
 
 | Group | Columns | What it captures |
 |-------|---------|-----------------|
 | Source | source_channel, publish_time, headline, text_content | Identity + content |
-| Classification | is_regular, event_type, inferred_tone, inferred_magnitude | What happened |
-| Market scope | inferred_impact_markets[], tickers[], sectors[], countries[] | Who's affected |
-| Scheduled fields | indicator_name, consensus_value, actual_value, surprise, surprise_z | For is_regular=TRUE only |
+| Taxonomy | event_category (14-label bucket), event_type (30-label fine), event_outcome (sub: beat/miss/hike/cut/...), is_regular | What happened |
+| Sentiment | tone, magnitude, confidence | LLM-reported text sentiment + self-assessed quality |
+| Affected entities | primary_ticker (any), ticker_impacts JSONB (universe-only, max 3, with role), sector (single nullable), impact_markets[] (8-value enum), countries[] | Who's affected |
+| Scheduled-release block | indicator_name, consensus_value, actual_value, surprise, surprise_z, reporting_period | For is_regular=TRUE only |
 | Dedup & chains | dedup_cluster_id, cluster_sequence, related_event_id | Avoid double-counting |
-| Structural tags | event_category, sub_category, sector_impact[], ticker_impact_weights JSONB, tags_version, tags_classified_at | 14-label taxonomy + per-ticker impact weights consumed by backtest strategy (migration 003) |
-| Metadata | classified_by, classification_confidence, metadata | Provenance |
+| Provenance | classified_by (e.g. "sonnet-4.6/unified-v2"), classifier_version, classified_at, raw_classification JSONB, metadata | Audit + future re-extraction without re-classifying |
+
+Migration history: 002 created the table; 003 added structural tags; 007 added UNIQUE on raw_id; 008 added the unified columns (event_outcome, ticker_impacts, sector, classifier_version, raw_classification); 009 renamed inferred_* → bare names + dropped the superseded multi-column entity surface (tickers/primary_ticker (kept!)/sectors/primary_sector/ticker_impact_weights/sector_impact/sub_category/tags_*).
 
 ## Adjacent Schemas
 
@@ -35,7 +37,11 @@ Single flat table. One row per classified event. Parser-classifier reads raw JSO
 | Script | Role |
 |--------|------|
 | `scripts/apply_migrations.py` | Apply pending `.sql` files under `db/migrations/` with checksum drift protection |
-| `scripts/backfill_structural_tags.py` | One-shot: copy structural tags from `events_classified_cache.json` into the new PG columns |
 | `scripts/ingest_x_twitterapi_io.py` | TwitterAPI.io bulk-search ingester (locked SOP) |
 | `scripts/ingest_x_archive.py` | Official X API archive (ID backfill) |
 | `scripts/catalog_tpio_datalake.py` | Catalog TPIO datalake JSONs into `events.raw` |
+
+Retired in 2026-05-18 unified-classification refactor (no longer in tree):
+- `scripts/backfill_structural_tags.py` (cache → PG bridge, obsolete now that classify.py writes the full structured object directly)
+- `backtest/preclassify.py` (Stage-2 batched Sonnet pass, obsolete — Stage 1's prompt now produces structural tags too)
+- `backtest/events_classified_cache.json` (JSON cache, obsolete — strategy reads from PG directly)

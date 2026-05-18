@@ -59,10 +59,10 @@ class ReplayDriver:
                 "t": int(ev.publish_time.timestamp()),
                 "headline": ev.headline,
                 "event_type": ev.event_type,
-                "tone": ev.inferred_tone,
+                "tone": ev.tone,
                 "is_regular": ev.is_regular,
                 "surprise": float(ev.surprise) if ev.surprise is not None else None,
-                "tickers": list(ev.tickers) if ev.tickers else [],
+                "tickers": [t["ticker"] for t in ev.ticker_impacts] if ev.ticker_impacts else [],
             })
 
         self._cmd_queue: asyncio.Queue = asyncio.Queue()
@@ -150,23 +150,13 @@ class ReplayDriver:
 
         event_list = []
         for i, ev in enumerate(timeline.events):
-            ts = ev["publish_time"]
-            if ts.tzinfo is None:
-                ts = ts.replace(tzinfo=timezone.utc)
-            tick = EventTick(
-                event_id=str(ev["event_id"]), publish_time=ts,
-                event_type=ev["event_type"], is_regular=bool(ev["is_regular"]),
-                headline=ev.get("headline"),
-                inferred_tone=ev.get("inferred_tone", "neutral"),
-                inferred_magnitude=ev.get("inferred_magnitude", "minor"),
-                tickers=ev.get("tickers") or [],
-                primary_ticker=ev.get("primary_ticker"),
-                surprise=ev.get("surprise"),
-                indicator_name=ev.get("indicator_name"),
-                metadata=ev.get("metadata") or {},
-            )
+            # Delegate to the timeline's _make_event_tick so all callers
+            # produce the same shape (one place to maintain when EventTick
+            # changes). The replay_driver historically rolled its own; that
+            # was a duplicate that drifted from timeline's logic.
+            tick = timeline._make_event_tick(ev)
             event_list.append(tick)
-            ts_ns = np.int64(int(ts.timestamp() * 1e9))
+            ts_ns = np.int64(int(tick.publish_time.timestamp() * 1e9))
             chunks.append(np.array([[ts_ns, 1, -1, -1, i]], dtype=np.int64))
 
         all_data = np.concatenate(chunks, axis=0)
@@ -275,10 +265,10 @@ class ReplayDriver:
                         "t": int(t.publish_time.timestamp()),
                         "headline": t.headline,
                         "event_type": t.event_type,
-                        "tone": t.inferred_tone,
+                        "tone": t.tone,
                         "is_regular": t.is_regular,
                         "surprise": float(t.surprise) if t.surprise is not None else None,
-                        "tickers": list(t.tickers) if t.tickers else [],
+                        "tickers": [x["ticker"] for x in t.ticker_impacts] if t.ticker_impacts else [],
                     })
                     count += 1
         return result
@@ -477,8 +467,8 @@ class ReplayDriver:
             msgs.append({"type": "event", "id": event.event_id,
                          "t": int(event.publish_time.timestamp()),
                          "headline": event.headline, "event_type": event.event_type,
-                         "tone": event.inferred_tone, "magnitude": event.inferred_magnitude,
-                         "tickers": list(event.tickers) if event.tickers else [],
+                         "tone": event.tone, "magnitude": event.magnitude,
+                         "tickers": [x["ticker"] for x in event.ticker_impacts] if event.ticker_impacts else [],
                          "surprise": float(event.surprise) if event.surprise is not None else None,
                          "is_regular": event.is_regular})
             for strat in self.strategies:
@@ -579,8 +569,8 @@ class ReplayDriver:
         for event in events:
             msgs.append({"type": "event", "id": event.event_id, "t": int(event.publish_time.timestamp()),
                          "headline": event.headline, "event_type": event.event_type,
-                         "tone": event.inferred_tone, "magnitude": event.inferred_magnitude,
-                         "tickers": list(event.tickers) if event.tickers else [],
+                         "tone": event.tone, "magnitude": event.magnitude,
+                         "tickers": [x["ticker"] for x in event.ticker_impacts] if event.ticker_impacts else [],
                          "surprise": float(event.surprise) if event.surprise is not None else None,
                          "is_regular": event.is_regular})
             for strat in self.strategies:

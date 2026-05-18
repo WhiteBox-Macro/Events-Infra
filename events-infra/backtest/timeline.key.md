@@ -14,7 +14,7 @@
 - **Constructor** — loads parquet bars for each ticker, loads events, applies start/end date filters, computes total tick count
 - **`iter_grouped()`** — yields `(timestamp, [ticks])` groups in chronological order using `heapq.merge`. Within each timestamp: bars first (PRIORITY_BAR=0), then events (PRIORITY_EVENT=1), bars sorted by ticker
 - **`_make_bar_tick(ticker, idx, row)`** — constructs BarTick from DataFrame row
-- **`_make_event_tick(ev)`** — constructs EventTick from DB row dict
+- **`_make_event_tick(ev)`** — constructs EventTick from DB row dict. Reads the unified columns (event_category, event_outcome, ticker_impacts JSONB, sector, primary_ticker, tone, magnitude, confidence) plus the scheduled-release block (indicator_name, consensus_value, actual_value, surprise, reporting_period). Defensive JSONB parsing for `ticker_impacts` (tolerates both dict-decoded and string forms).
 
 ## Inputs/Outputs
 

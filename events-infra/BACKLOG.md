@@ -130,6 +130,16 @@ Each is its own follow-on session per the plan's "What's Deferred & Why" table.
 - **Decision needed:** Either (a) sync parquet over (one-shot tar+ssh, similar to deploy command but without exclude); or (b) have the VPS fetch its own data via `market-data/fetch_yf.py` or `fetch_ibkr.py` (requires `yfinance` and/or `ib_insync` in `.venv` — not currently installed); or (c) keep VPS classification-only and run the dashboard on local only.
 - **No fix shipped this session per user instruction ("don't start backtesting yet").**
 
+### L-8 · [RESOLVED 2026-05-18] classify.py dual-write to legacy columns removed post-009
+
+- **Was:** During the migration window `build_classified_row` wrote BOTH new (`event_outcome`, `ticker_impacts`, `sector`, …) AND legacy (`inferred_tone`, `tickers`, `sectors`, `inferred_impact_markets`) columns.
+- **Resolved:** Migration 009 applied on both VPS and local. `build_classified_row` now writes only post-009 names (`tone`, `magnitude`, `confidence`, `impact_markets`). Smoke-tested via dashboard replay (37 events through strategy → 19 decisions, 0 errors).
+
+### L-9 · [RESOLVED 2026-05-18] event_outcome silently dropped — root cause of the drift incident
+
+- **Root cause:** `parser-classifier/classify.py::build_classified_row` mapped the LLM dict to PG columns but never included `event_outcome`. The Haiku prompt asked for it, the LLM produced it, the mapper dropped it.
+- **Resolution:** Migration 008 added the `event_outcome TEXT` column. The unified prompt continues to emit it. The rewritten `build_classified_row` now stores it. Pilot run (50 events): 3 events with non-null event_outcome — the data we were losing is back. Full run (3,602 events) in progress.
+
 ---
 
 ## How to drain this backlog
