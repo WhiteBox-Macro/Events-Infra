@@ -116,12 +116,19 @@ Each is its own follow-on session per the plan's "What's Deferred & Why" table.
 - **What:** Loud-fail is currently WARNING. For a 14-ticker rebalance event with a sector_spillover row on a catch-all category, that's 14 WARNING lines per event. Over 60 days × ~30 events/day, ~25k warnings per replay.
 - **Fix:** Downgrade to DEBUG with a one-time INFO on first occurrence per process. Use a module-level set to deduplicate (cat, ticker) keys.
 
-### L-6 · [M] VPS `.venv` missing numpy / pandas / pyarrow / websockets for full backtest
+### L-6 · [RESOLVED 2026-05-18] VPS `.venv` data-stack deps installed
 
-- **Where:** `/opt/react-cloud/.venv` on react-cloud
-- **What:** As of 2026-05-18, only `psycopg2-binary` and `anthropic` are installed. Migration runner, preclassify, and parser-classifier work end-to-end (verified). But the full dashboard (timeline → parquet → strategy → portfolio_allocator → ReplayDriver) cannot run because none of the data-stack libs are present.
-- **Decision needed:** Do we want backtest replay on VPS at all? If yes, install `numpy pandas pyarrow websockets aiohttp`. If no, document VPS as classification-only and skip.
-- **Fix (if yes):** `ssh react-cloud "/opt/react-cloud/.venv/bin/pip install numpy pandas pyarrow websockets aiohttp"`
+- **Was:** `/opt/react-cloud/.venv` had only `psycopg2-binary` + `anthropic`.
+- **Now installed:** `numpy 2.4.5`, `pandas 3.0.3`, `pyarrow 24.0.0`, `websockets 16.0` (`aiohttp` not needed — not imported anywhere in events-infra).
+- **Verified:** Full dashboard import chain loads cleanly on VPS — `config`, `tick`, `engine`, `timeline`, `order_manager`, `portfolio_allocator`, `gate_params`, `sonnet_event_strategy`, `replay_driver`. `SonnetEventStrategy(cache_only=True)` instantiates with 219 cache entries. `decide_trade` smoke returns expected legacy result.
+- **Not yet started:** dashboard server not launched on VPS. See L-7 (parquet data) before any real run.
+
+### L-7 · [M] VPS missing parquet market-data for backtest replay
+
+- **Where:** `/opt/react-cloud/events-infra/market-data/` has only the `fetch_*.py` scripts; no `1m-parquet/` subdirectory.
+- **What:** Deploy excluded `events-infra/market-data/1m-parquet/` and `1m-parquet.zip` (~46MB locally, but represents 34 tickers × months of 1-min bars). The dashboard `TimelineMerger` would fail to find any bar data and emit zero ticks.
+- **Decision needed:** Either (a) sync parquet over (one-shot tar+ssh, similar to deploy command but without exclude); or (b) have the VPS fetch its own data via `market-data/fetch_yf.py` or `fetch_ibkr.py` (requires `yfinance` and/or `ib_insync` in `.venv` — not currently installed); or (c) keep VPS classification-only and run the dashboard on local only.
+- **No fix shipped this session per user instruction ("don't start backtesting yet").**
 
 ---
 
