@@ -6,7 +6,9 @@
 <script src="https://unpkg.com/lightweight-charts@4/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 * { margin:0; padding:0; box-sizing:border-box; }
-body { background:#0d1117; color:#c9d1d9; font-family:'Consolas','Monaco',monospace; font-size:12px; overflow:hidden; height:100vh; }
+body { background:#0d1117; color:#c9d1d9; font-family:'Consolas','Monaco',monospace; font-size:12px; overflow:hidden; height:100vh; position:relative; }
+body::before { content:'WhiteBox'; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%) rotate(-18deg); font-size:18vw; font-weight:900; letter-spacing:0.08em; color:rgba(255,255,255,0.025); pointer-events:none; user-select:none; z-index:0; white-space:nowrap; font-family:'Segoe UI','Helvetica',Arial,sans-serif; }
+#layout, #controls { position:relative; z-index:1; }
 
 #controls { display:flex; align-items:center; gap:10px; padding:6px 12px; background:#161b22; border-bottom:1px solid #30363d; height:36px; }
 #controls button { background:#21262d; color:#c9d1d9; border:1px solid #30363d; padding:3px 10px; cursor:pointer; border-radius:4px; font-family:inherit; font-size:12px; }
@@ -160,6 +162,12 @@ function initMainChart() {
     grid:{vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'}},
     timeScale:{timeVisible:true, secondsVisible:false, rightOffset:5},
     crosshair:{mode:0},
+    watermark:{
+      visible:true, text:'WhiteBox',
+      color:'rgba(255,255,255,0.05)', fontSize:96,
+      fontFamily:'Segoe UI, Helvetica, Arial, sans-serif',
+      fontStyle:'normal', horzAlign:'center', vertAlign:'center',
+    },
   });
   S.mainSeries = S.mainChart.addCandlestickSeries({
     upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
