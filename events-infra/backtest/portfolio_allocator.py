@@ -57,10 +57,16 @@ def compute_tilt(
     When `params` (a GateParams instance) is provided, honors:
       - params.tilt_unit  (overrides module TILT_UNIT)
       - params.side_rule  (tone_reliable | contrarian | surprise_direction)
-      - params.min_obs    (raises bar for the stats-based path)
+      - params.min_obs    (HARD GATE when stats present — under-min_obs returns 0)
       - params.min_hit_rate (used by the stats-based path)
     When `params` is None, behaves identically to the pre-refactor logic
     (preserves backward compatibility).
+
+    min_obs semantics (B-3 fix, 2026-05-22):
+      - params is None  → soft gate (legacy): tone-only fallback when under
+      - params provided → hard gate: matches decide_trade's discrete-mode
+        skip-when-insufficient-obs behavior so an agent setting min_obs=10
+        sees the same gate in both rebalance and discrete strategies.
     """
     # Resolve effective knobs from params (or fall back to today's constants)
     if params is not None:
@@ -106,6 +112,13 @@ def compute_tilt(
             direction = -1.0 if tone == "bullish" else 1.0
         else:
             return 0.0
+    elif params is not None and stats is not None:
+        # B-3 fix: when an agent has configured GateParams for this (cat, ticker)
+        # and we have stats but they fall short of min_obs, treat as a hard gate
+        # — same semantics as decide_trade's discrete-mode path. This prevents
+        # the silent tone-only fallback that surprised agents setting min_obs=10
+        # and still seeing trades fire on under-10-obs events.
+        return 0.0
     else:
         direction = 1.0 if tone == "bullish" else -1.0
 

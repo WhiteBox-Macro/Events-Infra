@@ -16,6 +16,7 @@ Continuous weight-based portfolio rebalancing. Manages N tickers with target wei
     - `surprise_direction` — direction from `sign(surprise)`; ignores stats / tone
     - `sector_spillover` — loud-fails (logs WARNING, returns 0) until B4 wires it
   - `params=None` preserves pre-refactor behavior (effective: tone_reliable, min_obs=3, min_hit_rate=0.55)
+  - **B-3 (2026-05-22):** `min_obs` is a HARD gate when `params` is provided — under-min_obs with stats returns 0. Matches `decide_trade` discrete-mode semantics. Legacy callers (`params=None`) keep soft gate (tone-only fallback).
 
 ## PortfolioAllocator Methods
 - `initialize_positions(prices, ts)` — buy equal-weight portfolio
