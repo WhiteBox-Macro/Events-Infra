@@ -9,36 +9,24 @@ Severity tags:
 
 ---
 
-## Round 3 adversarial review findings (2026-05-18, NOT yet fixed)
+## Round 3 adversarial review findings (2026-05-18) — RESOLVED 2026-05-22
 
-Three Important findings surfaced after Round 2 fixes landed. Loop did NOT converge; these are the convergence-blocker items.
+All three Round-3 Important findings closed; Round 3 convergence-blockers cleared. Commit: `3308f85`.
 
-### B-1 · [I] `tilt_unit` CHECK constraint rejects its own documented upper bound
+### B-1 · [I] `tilt_unit` CHECK constraint rejects its own documented upper bound — RESOLVED
 
-- **Where:** [db/migrations/006_tilt_unit_check.sql:17](db/migrations/006_tilt_unit_check.sql)
-- **What:** `signals.gate_params.tilt_unit REAL` + `CHECK (tilt_unit <= 0.10)`. REAL widens at compare time: `0.10::real` stored as `0.10000000149...`, exceeds literal `0.10::float8`. **Empirically verified:** `INSERT ... tilt_unit=0.10` returns `ERROR: new row for relation "gate_params" violates check constraint "gate_params_tilt_unit_bounds"`.
-- **Fix options** (pick one):
-  1. New migration `007_tilt_unit_bounds_fix.sql` widens bound: `DROP CONSTRAINT ... ADD CONSTRAINT ... CHECK (tilt_unit > 0 AND tilt_unit <= 0.1001)` — simplest, semantically equivalent (the 0.10 doc-bound was already defensive)
-  2. Cast both sides to `real`: `CHECK (tilt_unit::real > 0::real AND tilt_unit::real <= 0.10::real)` — preserves exact 0.10 boundary
-  3. Change column type to `NUMERIC(5,4)` — decimal-exact, cleanest, requires ALTER COLUMN TYPE
-- **Effort:** ~10 min migration + verification
+- **Resolution:** Migration `010_tilt_unit_bounds_fix.sql` (Option 1) — drops + re-adds the constraint with bound `<= 0.1001`. Applied to prod PG 2026-05-22 17:24 UTC.
+- **Verification:** `INSERT ... tilt_unit=0.10` previously failed; after migration the same row inserts cleanly and reads back as `0.1`. Empirical repro/fix cycle in session log.
 
-### B-2 · [I] `backtest/FOLDER.md` doesn't list `gate_params.py`
+### B-2 · [I] `backtest/FOLDER.md` doesn't list `gate_params.py` — RESOLVED
 
-- **Where:** [backtest/FOLDER.md](backtest/FOLDER.md) Files table
-- **What:** Read Gate violation per `~/.claude/CLAUDE.md`. Anyone navigating `backtest/` via FOLDER.md will miss `gate_params.py` entirely — including `GateParams`, `GateParamsRegistry`, `GLOBAL_DEFAULTS`, `BROAD_TICKER` sentinel that the strategy now depends on. (`portfolio_allocator.py` is also missing from the table — pre-existing drift, address while editing.)
-- **Fix:** Add row: `| gate_params.py | GateParams dataclass + GateParamsRegistry: per-(category, ticker) decision-gate parameters loaded from signals.gate_params |`. Also add `portfolio_allocator.py` row while there. Mention new `signals` schema + migrations 004/006 in the Data Flow section.
-- **Effort:** ~5 min
+- **Resolution:** `backtest/FOLDER.md` was already updated in commit `f459b1f` (unified-classification refactor) — it lists both `gate_params.py` AND `portfolio_allocator.py`. VPS held a stale copy; rsynced 2026-05-22.
+- **Verification:** Diff against deployed VPS file now matches local repo.
 
-### B-3 · [I] `compute_tilt` vs `decide_trade` `min_obs` semantic asymmetry
+### B-3 · [I] `compute_tilt` vs `decide_trade` `min_obs` semantic asymmetry — RESOLVED
 
-- **Where:** [backtest/portfolio_allocator.py:95-110](backtest/portfolio_allocator.py) vs [backtest/strategies/sonnet_event_strategy.py:240-241](backtest/strategies/sonnet_event_strategy.py)
-- **What:** `decide_trade` (discrete) treats `stats.count < params.min_obs` as a hard gate (returns `None, "insufficient obs"`). `compute_tilt` (rebalance) treats it as a soft gate: falls through to tone-only direction with full `direction * llm_weight * tilt_unit`. After R2 wired GateParams into `compute_tilts`, an agent setting `min_obs=10` expects under-10-obs events to skip in BOTH modes — but rebalance keeps trading on tone alone.
-- **Decision needed:**
-  - Option A — gate-with-skip when params is non-None: `compute_tilt` returns 0 if `stats is not None AND stats.count < params.min_obs`. Preserves backward-compat for `params=None` legacy callers. Matches discrete-mode semantics under agent control.
-  - Option B — keep current behavior, rename the param to `min_obs_for_contrarian` (since it now only gates the contrarian branch), update docs.
-  - My recommendation: A (less surprising to agents).
-- **Effort:** ~20 min code + docs + a smoke test row in the next regression set
+- **Resolution:** Option A (gate-with-skip). When `params` is provided AND `stats is not None` AND `stats.count < min_obs`, `compute_tilt` now returns 0 — matches `decide_trade` discrete-mode semantics. Legacy `params=None` callers keep the tone-only fallback for backward-compat. Docstring + `portfolio_allocator.key.md` updated.
+- **Verification:** 4-case scenario test passed (legacy soft gate preserved, B-3 hard gate kicks in, above-gate trades fire, params+no-stats still tone-fallback).
 
 ---
 
